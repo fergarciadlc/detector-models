@@ -16,6 +16,7 @@ DOCKER_RUN := docker run --rm \
 	$(IMAGE)
 
 LIMIT ?=
+MANIFEST ?=
 
 # ============================================================
 # Setup
@@ -45,7 +46,9 @@ prepare: ## Stage 1: Scan audio + split
 
 .PHONY: features
 features: ## Stage 2: Extract features
-	$(DOCKER_RUN) python -m pipelines.extract_features --config $(EXP)
+	$(DOCKER_RUN) python -m pipelines.extract_features \
+		--config $(EXP) \
+		$(if $(MANIFEST),--manifest $(MANIFEST))
 
 .PHONY: train
 train: ## Stage 3: Train
