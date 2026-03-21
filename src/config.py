@@ -126,8 +126,12 @@ class FeaturesConfig:
 
     @property
     def n_freq_bins(self) -> int:
-        """Number of frequency bins in the spectrogram."""
-        return self.stft.n_fft // 2 + 1
+        """Number of frequency bins in the spectrogram (after hf_cut if set)."""
+        full_bins = self.stft.n_fft // 2 + 1
+        if self.audio.hf_cut_hz is not None:
+            freq_per_bin = self.audio.sample_rate / self.stft.n_fft
+            return int(self.audio.hf_cut_hz / freq_per_bin) + 1
+        return full_bins
 
     def frames_for_duration(self, duration_sec: float) -> int:
         """Number of time frames for a given audio duration."""

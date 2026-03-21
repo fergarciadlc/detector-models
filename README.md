@@ -1,8 +1,8 @@
 # Audio Classification Pipeline — Development Notes
 
-> **Status**: Active development — MVP phase
+> **Status**: MVP complete — all 4 pipeline stages implemented and running
 > **Last updated**: 2026-03-21
-> **Stage**: Config loader implemented. Starting Stage 1 (Data Preparation).
+> **Stage**: Full pipeline operational (Data Prep → Feature Extraction → Training → Evaluation)
 
 ---
 
@@ -384,21 +384,22 @@ data/features/stft_db_44k/
 ## 6. Project Structure (MVP)
 
 ```text
-audio-classification-pipeline/
+detector-models/
 │
 ├── configs/
 │   ├── datasets/
-│   │   └── full_songs_v1.yaml
+│   │   └── fma_v1.yaml            # FMA small dataset config
 │   ├── features/
-│   │   └── stft_db_44k.yaml
+│   │   └── stft_db_44k.yaml       # STFT magnitude dB features
 │   ├── models/
-│   │   └── spec_cnn_v1.yaml
+│   │   └── spec_cnn_v1.yaml       # 2D CNN architecture
 │   └── experiments/
-│       └── exp_001.yaml
+│       └── exp_001.yaml           # Baseline experiment
 │
 ├── src/
 │   ├── __init__.py
 │   ├── config.py                  # Config loader + dataclasses
+│   ├── mlflow_logger.py           # Graceful MLflow wrapper (shared)
 │   ├── data/
 │   │   ├── __init__.py
 │   │   ├── scanner.py             # Scan audio dirs, validate files
@@ -408,18 +409,18 @@ audio-classification-pipeline/
 │   │   ├── __init__.py
 │   │   ├── audio_loader.py        # Load + resample audio (librosa)
 │   │   ├── spectrogram.py         # STFT / mel spectrogram extraction
-│   │   └── windowing.py           # Sliding window (for eval)
+│   │   └── windowing.py           # Deterministic strided windows (eval)
 │   ├── models/
 │   │   ├── __init__.py
-│   │   └── cnn.py                 # SimpleSpectrogramCNN
+│   │   └── cnn.py                 # SimpleSpectrogramCNN (Keras)
 │   ├── training/
 │   │   ├── __init__.py
-│   │   ├── trainer.py             # Training loop + callbacks
+│   │   ├── trainer.py             # Training loop + callbacks + MLflow
 │   │   └── data_loader.py         # tf.data pipeline from .npy
 │   └── evaluation/
 │       ├── __init__.py
 │       ├── evaluator.py           # Inference + per-file aggregation
-│       └── metrics.py             # Metrics + plots
+│       └── metrics.py             # Metrics + plots (sklearn/matplotlib)
 │
 ├── pipelines/
 │   ├── prepare_data.py            # CLI: Stage 1
@@ -428,37 +429,40 @@ audio-classification-pipeline/
 │   └── evaluate.py                # CLI: Stage 4
 │
 ├── docker/
-│   └── Dockerfile
+│   └── Dockerfile                 # python:3.11-slim + audio deps
 │
 ├── tests/
 │   └── unit/
 │       ├── test_config.py
 │       ├── test_splitter.py
+│       ├── test_audio_loader.py
 │       ├── test_spectrogram.py
-│       └── test_windowing.py
+│       ├── test_cnn.py
+│       ├── test_data_loader.py
+│       ├── test_windowing.py
+│       └── test_metrics.py
 │
 ├── data/                          # Git-ignored
-│   ├── raw/
-│   ├── manifests/
-│   └── features/
+│   ├── manifests/                 # Stage 1 output
+│   ├── features/                  # Stage 2 output (.npy spectrograms)
+│   └── artifacts/                 # Stage 3+4 output (models, plots, reports)
 │
-├── artifacts/                     # Git-ignored
-├── docker-compose.yml             # MLflow only
-├── Makefile
-├── pyproject.toml
-├── .env.example
+├── compose.yaml                   # MLflow tracking server
+├── Makefile                       # Pipeline orchestration via Docker
+├── pyproject.toml                 # Dependencies (hatchling)
+├── .env.example                   # Environment variable template
+├── .env                           # Local overrides (git-ignored)
 ├── .gitignore
-├── NOTES.md                       # ← this file
+├── .dockerignore
 └── README.md
 ```
 
-### Deferred from full design (to add post-MVP)
+### Deferred (post-MVP)
 
 | Item | When to add |
 |------|-------------|
 | Abstract model base class + registry | When adding model #2 or Torch |
 | `src/models/tf/` subfolder nesting | When adding Torch alongside TF |
-| `src/tracking/mlflow_client.py` wrapper | When MLflow patterns repeat across stages |
 | Separate `base.Dockerfile` + `training.Dockerfile` | When dependencies diverge |
 | `docker-compose.pipeline.yml` | When stages need inter-container networking |
 | `notebooks/` folder | When needed for exploration |
@@ -470,71 +474,99 @@ audio-classification-pipeline/
 
 ## 7. Infrastructure
 
-### Makefile (MVP)
-
-```makefile
-EXP ?= configs/experiments/exp_001.yaml
-IMAGE := audio-cls
-DOCKER_RUN := docker run --rm \
-    --gpus all \
-    -v $(PWD)/configs:/app/configs \
-    -v $(PWD)/data:/app/data \
-    --env-file .env \
-    $(IMAGE)
-
-build:          ## Build Docker image
-up:             ## Start MLflow
-down:           ## Stop MLflow
-prepare:        ## Stage 1: Scan audio + split
-features:       ## Stage 2: Extract features
-train:          ## Stage 3: Train model
-evaluate:       ## Stage 4: Evaluate model
-run-all:        ## Full pipeline (prepare → features → train → evaluate)
-test:           ## Run unit tests
-lint:           ## Run linters
-```
-
-### Docker Compose (MLflow only for MVP)
-
-Single `docker-compose.yml` running MLflow server with persistent volume.
-
-### Usage
+### Quick Start
 
 ```bash
+# 1. Copy and edit environment variables
+cp .env.example .env
+# Edit .env: set DATASETS_DIR, MLFLOW_PORT, MLFLOW_TRACKING_URI
+
+# 2. Start MLflow tracking server
+make up
+
+# 3. Build the Docker image
+make build
+
+# 4. Run the full pipeline
 make run-all EXP=configs/experiments/exp_001.yaml
-# or stage by stage:
+
+# Or run stage by stage:
 make prepare  EXP=configs/experiments/exp_001.yaml
 make features EXP=configs/experiments/exp_001.yaml
 make train    EXP=configs/experiments/exp_001.yaml
 make evaluate EXP=configs/experiments/exp_001.yaml
+
+# Use LIMIT for quick test runs
+make prepare EXP=configs/experiments/exp_001.yaml LIMIT=100
 ```
+
+### Makefile Targets
+
+```text
+build            Build Docker image
+up               Start MLflow tracking server
+down             Stop MLflow
+prepare          Stage 1: Scan audio + split
+features         Stage 2: Extract features
+train            Stage 3: Train model
+evaluate         Stage 4: Evaluate model
+run-all          Full pipeline (prepare → features → train → evaluate)
+test             Run unit tests (locally)
+lint             Run ruff linter
+```
+
+### Docker Compose
+
+`compose.yaml` runs a self-hosted MLflow server (`ghcr.io/mlflow/mlflow:v2.11.1`)
+with SQLite backend and persistent named volume. The MLflow UI is available at
+`http://localhost:${MLFLOW_PORT}` (default 5000).
+
+### Environment Variables
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `DATASETS_DIR` | Host path to raw audio datasets (mounted read-only at `/datasets`) | `/Users/you/datasets/fma` |
+| `MLFLOW_PORT` | Host port for MLflow UI | `8010` |
+| `MLFLOW_TRACKING_URI` | MLflow server URL (used inside Docker containers) | `http://host.docker.internal:8010` |
 
 ---
 
 ## 8. Implementation Progress
 
+### Pipeline Stages
+
+| Stage | Status | CLI Entrypoint |
+|-------|--------|----------------|
+| Stage 1: Data Preparation | ✅ Done | `pipelines/prepare_data.py` |
+| Stage 2: Feature Extraction | ✅ Done | `pipelines/extract_features.py` |
+| Stage 3: Training | ✅ Done | `pipelines/train.py` |
+| Stage 4: Evaluation | ✅ Done | `pipelines/evaluate.py` |
+
+### Source Modules
+
+| Module | Status | Key Files |
+|--------|--------|-----------|
+| Config loader + dataclasses | ✅ Done | `src/config.py` |
+| MLflow logger (shared) | ✅ Done | `src/mlflow_logger.py` |
+| Data scanner + splitter | ✅ Done | `src/data/scanner.py`, `splitter.py`, `manifest.py` |
+| Audio loader | ✅ Done | `src/features/audio_loader.py` |
+| Spectrogram extraction | ✅ Done | `src/features/spectrogram.py` |
+| Deterministic windowing | ✅ Done | `src/features/windowing.py` |
+| CNN model builder | ✅ Done | `src/models/cnn.py` |
+| tf.data pipeline | ✅ Done | `src/training/data_loader.py` |
+| Training orchestrator | ✅ Done | `src/training/trainer.py` |
+| Evaluator (inference + aggregation) | ✅ Done | `src/evaluation/evaluator.py` |
+| Metrics + plots | ✅ Done | `src/evaluation/metrics.py` |
+
+### Infrastructure
+
 | Component | Status | File |
 |-----------|--------|------|
-| Config dataclasses | ✅ Done | `src/config.py` |
-| Config loader (YAML → ExperimentConfig) | ✅ Done | `src/config.py` |
-| Config unit tests | ✅ Done | `tests/unit/test_config.py` |
-| Dataset scanner | ⬜ Next | `src/data/scanner.py` |
-| Stratified splitter | ⬜ Next | `src/data/splitter.py` |
-| Manifest read/write | ⬜ Next | `src/data/manifest.py` |
-| Stage 1 CLI entrypoint | ⬜ Next | `pipelines/prepare_data.py` |
-| Audio loader | ⬜ Pending | `src/features/audio_loader.py` |
-| Spectrogram extraction | ⬜ Pending | `src/features/spectrogram.py` |
-| Stage 2 CLI entrypoint | ⬜ Pending | `pipelines/extract_features.py` |
-| CNN model builder | ⬜ Pending | `src/models/cnn.py` |
-| tf.data loader | ⬜ Pending | `src/training/data_loader.py` |
-| Trainer | ⬜ Pending | `src/training/trainer.py` |
-| Stage 3 CLI entrypoint | ⬜ Pending | `pipelines/train.py` |
-| Evaluator | ⬜ Pending | `src/evaluation/evaluator.py` |
-| Metrics + plots | ⬜ Pending | `src/evaluation/metrics.py` |
-| Stage 4 CLI entrypoint | ⬜ Pending | `pipelines/evaluate.py` |
-| Dockerfile | ⬜ Pending | `docker/Dockerfile` |
-| docker-compose.yml | ⬜ Pending | `docker-compose.yml` |
-| Makefile | ⬜ Pending | `Makefile` |
+| Dockerfile | ✅ Done | `docker/Dockerfile` |
+| Docker Compose (MLflow) | ✅ Done | `compose.yaml` |
+| Makefile | ✅ Done | `Makefile` |
+| pyproject.toml | ✅ Done | `pyproject.toml` |
+| Unit tests | ✅ Done | `tests/unit/` (8 test files) |
 
 ---
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -51,11 +52,18 @@ class MLflowLogger:
     def active(self) -> bool:
         return self._active
 
+    @staticmethod
+    def _timestamped_name(run_name: str) -> str:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return f"{ts}_{run_name}"
+
     def start_run(self, run_name: str) -> None:
         if not self._active:
             return
         try:
-            self._run = self._mlflow.start_run(run_name=run_name)
+            stamped = self._timestamped_name(run_name)
+            self._run = self._mlflow.start_run(run_name=stamped)
+            logger.info("MLflow run started: %s", stamped)
         except Exception:
             logger.warning("Failed to start MLflow run", exc_info=True)
             self._active = False
