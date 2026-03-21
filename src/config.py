@@ -84,6 +84,7 @@ class DatasetConfig:
     paths: dict[str, str]  # {real: ..., fake: ...}
     format: str
     split: SplitConfig
+    limit: int | None = None  # max files per class, null = all
 
 
 # ── Features ────────────────────────────────────────────────────

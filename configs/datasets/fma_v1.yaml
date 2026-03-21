@@ -1,6 +1,7 @@
 dataset:
   name: full_songs_v1
   description: "FMA small vs AI-rebuilt FMA small"
+  limit: null
 
   paths:
     real: /datasets/fma_small

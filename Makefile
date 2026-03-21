@@ -10,6 +10,8 @@ DOCKER_RUN := docker run --rm \
 	--env-file .env \
 	$(IMAGE)
 
+LIMIT ?=
+
 # ============================================================
 # Setup
 # ============================================================
@@ -32,7 +34,9 @@ down: ## Stop MLflow
 
 .PHONY: prepare
 prepare: ## Stage 1: Scan audio + split
-	$(DOCKER_RUN) python -m pipelines.prepare_data --config $(EXP)
+	$(DOCKER_RUN) python -m pipelines.prepare_data \
+		--config $(EXP) \
+		$(if $(LIMIT),--limit $(LIMIT))
 
 .PHONY: features
 features: ## Stage 2: Extract features
