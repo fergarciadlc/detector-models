@@ -42,9 +42,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--limit",
         type=int,
         default=None,
-        help=(
-            "Max files per class (overrides dataset config). Useful for quick testing."
-        ),
+        help=("Max files per class (overrides dataset config). Useful for quick testing."),
     )
     parser.add_argument(
         "--output-dir",

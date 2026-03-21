@@ -1,9 +1,10 @@
 # tests/unit/test_splitter.py
 """Tests for stratified splitter."""
 
+from pathlib import Path
+
 from src.data.scanner import AudioFile
 from src.data.splitter import stratified_split
-from pathlib import Path
 
 
 def _make_files(n_real: int, n_fake: int) -> list[AudioFile]:
@@ -79,6 +80,4 @@ def test_split_summary():
     summary = split.summary
 
     assert set(summary.keys()) == {"train", "val", "test"}
-    assert (
-        summary["train"]["total"] == summary["train"]["real"] + summary["train"]["fake"]
-    )
+    assert summary["train"]["total"] == summary["train"]["real"] + summary["train"]["fake"]

@@ -16,12 +16,11 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
-
 
 # ── Helpers ─────────────────────────────────────────────────────
 
@@ -112,9 +111,7 @@ class NormalizationConfig:
 
     def __post_init__(self):
         if self.strategy == "fixed" and (self.mean is None or self.std is None):
-            raise ValueError(
-                "Normalization strategy 'fixed' requires both mean and std"
-            )
+            raise ValueError("Normalization strategy 'fixed' requires both mean and std")
 
 
 @dataclass
@@ -155,8 +152,7 @@ class BackboneConfig:
         lengths = [len(self.filters), len(self.kernels), len(self.strides)]
         if len(set(lengths)) != 1:
             raise ValueError(
-                f"Backbone filters/kernels/strides must have the same length, "
-                f"got {lengths}"
+                f"Backbone filters/kernels/strides must have the same length, got {lengths}"
             )
 
 
