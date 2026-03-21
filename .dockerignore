@@ -1,0 +1,13 @@
+.venv
+.env
+.env.*
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+data/
+artifacts/
+mlruns/
+.git
+*.egg-info

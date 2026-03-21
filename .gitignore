@@ -49,6 +49,11 @@ dist/
 .env.*
 .envrc
 
+# Pipeline data & artifacts (large / generated)
+data/
+artifacts/
+mlruns/
+
 # Temporary files
 tmp/
 temp/

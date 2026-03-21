@@ -4,7 +4,7 @@ experiment:
   tags:
     task: full_song_detection
 
-dataset: configs/datasets/full_songs_v1.yaml
+dataset: configs/datasets/fma_v1.yaml
 features: configs/features/stft_db_44k.yaml
 model: configs/models/spec_cnn_v1.yaml
 
