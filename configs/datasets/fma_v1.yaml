@@ -5,7 +5,7 @@ dataset:
 
   paths:
     real: /datasets/fma_small
-    fake: /datasets/fma_rebuilt_small
+    fake: /datasets/fma_small_rebuilt
 
   format: mp3
 

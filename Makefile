@@ -2,11 +2,16 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 EXP ?= configs/experiments/exp_001.yaml
-IMAGE := audio-cls
+IMAGE := genai-audio-detector
+OS := $(shell uname -s)
+GPU_FLAGS ?= $(if $(filter Linux,$(OS)),--gpus all,)
+DATASETS_DIR ?= $(shell grep -s '^DATASETS_DIR=' .env | cut -d= -f2-)
+
 DOCKER_RUN := docker run --rm \
-	--gpus all \
+	$(GPU_FLAGS) \
 	-v $(PWD)/configs:/app/configs \
 	-v $(PWD)/data:/app/data \
+	-v $(DATASETS_DIR):/datasets:ro \
 	--env-file .env \
 	$(IMAGE)
 
