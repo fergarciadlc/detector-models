@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+ENV GIT_PYTHON_REFRESH=quiet
+
 WORKDIR /app
 
 COPY pyproject.toml .
