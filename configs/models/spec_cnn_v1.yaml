@@ -1,0 +1,23 @@
+model:
+  name: spec_cnn_v1
+  type: spectrogram_cnn
+
+  backbone:
+    filters:  [16, 32, 64, 128, 256, 512]
+    kernels:  [3, 3, 3, 3, 3, 3]
+    strides:  [2, 2, 2, 2, 2, 2]
+    use_maxpool: true
+    activation: relu
+    batch_norm: true
+    pooling: average
+
+  head:
+    dense_units: 128
+    activation: swish
+    dropout: 0.2
+
+  output:
+    type: binary
+    activation: sigmoid
+    loss: binary_crossentropy
+    threshold: 0.5

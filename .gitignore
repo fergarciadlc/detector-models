@@ -1,0 +1,54 @@
+# Misc
+**.excalidraw
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.so
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Output data
+outputs/
+*.jsonl
+*.csv
+
+# Logs
+*.log
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE configs
+.vscode/
+.idea/
+
+# Build / distribution
+build/
+dist/
+*.egg-info/
+
+# API keys / environment files
+.env.local
+.env.*
+.envrc
+
+# Temporary files
+tmp/
+temp/

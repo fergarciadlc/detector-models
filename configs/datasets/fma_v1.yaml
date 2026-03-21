@@ -1,0 +1,14 @@
+dataset:
+  name: full_songs_v1
+  description: "FMA small vs AI-rebuilt FMA small"
+
+  paths:
+    real: /datasets/fma_small
+    fake: /datasets/fma_rebuilt_small
+
+  format: mp3
+
+  split:
+    strategy: stratified   # stratified | random | predefined
+    ratios: [0.70, 0.10, 0.20]   # train / val / test
+    seed: 123
