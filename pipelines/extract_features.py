@@ -102,8 +102,8 @@ def extract_file(
         "source_audio": str(audio_file.path),
         "label": audio_file.label,
         "label_name": audio_file.label_name,
-        "n_frames": S.shape[1],
-        "n_freq_bins": S.shape[0],
+        "n_frames": S.shape[0],
+        "n_freq_bins": S.shape[1],
         "duration_sec": round(duration_sec, 2),
     }
 

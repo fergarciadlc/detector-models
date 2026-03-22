@@ -37,8 +37,9 @@ def compute_spectrogram(
         features_cfg: Full features config (STFT params, normalization, etc.).
 
     Returns:
-        2-D float32 array of shape (n_freq_bins, n_frames).
-        n_freq_bins may be reduced if hf_cut_hz is set.
+        2-D float32 array of shape (n_frames, n_freq_bins), time-major
+        (matches tf.signal.stft frame x bin order). ``n_freq_bins`` may be
+        reduced if hf_cut_hz is set.
     """
     stft = features_cfg.stft
 
@@ -62,7 +63,8 @@ def compute_spectrogram(
 
     S_db = _normalize(S_db, features_cfg)
 
-    return S_db.astype(np.float32)
+    # Librosa STFT is (freq, time); store and feed the model as (time, freq).
+    return np.ascontiguousarray(S_db.T.astype(np.float32))
 
 
 def _normalize(S: np.ndarray, features_cfg: FeaturesConfig) -> np.ndarray:

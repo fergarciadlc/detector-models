@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("Test files: %d", len(test_entries))
 
     # Inference config
-    crop_frames = cfg.input_shape[1]
+    crop_frames = cfg.input_shape[0]
     threshold = cfg.model.output.threshold or 0.5
     logger.info(
         "Crop frames: %d, threshold: %.2f",

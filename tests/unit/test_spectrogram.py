@@ -37,11 +37,11 @@ def test_output_shape(features_cfg, sine_wave):
     assert S.dtype == np.float32
 
     expected_freq_bins = _hf_cut_bin(2048, 44100, 16000)
-    assert S.shape[0] == expected_freq_bins
+    assert S.shape[1] == expected_freq_bins
 
     # librosa.stft uses center=True by default, padding n_fft//2 on each side
     expected_frames = 1 + len(sine_wave) // 512
-    assert S.shape[1] == expected_frames
+    assert S.shape[0] == expected_frames
 
 
 def test_no_hf_cut(sine_wave):
@@ -58,7 +58,7 @@ def test_no_hf_cut(sine_wave):
     S = compute_spectrogram(sine_wave, cfg)
 
     full_bins = 2048 // 2 + 1  # n_fft/2 + 1
-    assert S.shape[0] == full_bins
+    assert S.shape[1] == full_bins
 
 
 def test_hf_cut_bin():

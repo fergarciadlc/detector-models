@@ -39,9 +39,10 @@ def evaluate_test_set(
     """Run inference on test entries with strided windowing and per-file aggregation.
 
     Args:
-        model: Compiled Keras model.
+        model: Compiled Keras model (expects time-major inputs: batch shape
+            ``(batch, crop_frames, n_freq_bins, 1)``).
         entries: Feature manifest entries for the test split.
-        crop_frames: Window width in frames.
+        crop_frames: Window width in time frames.
         threshold: Decision threshold for binary classification.
         hop_frames: Stride between windows (defaults to crop_frames).
         batch_size: Batch size for model.predict.

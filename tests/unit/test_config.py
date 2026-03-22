@@ -154,13 +154,14 @@ def test_load_experiment(project_dir):
 
 
 def test_input_shape(project_dir):
-    """Test computed input_shape property."""
+    """Test computed input_shape property (time-major: n_time, n_freq, channels)."""
     cfg = load_experiment(project_dir / "configs" / "experiments" / "exp.yaml")
-    n_freq, n_time, channels = cfg.input_shape
+    n_time, n_freq, channels = cfg.input_shape
 
-    assert n_freq == 1025  # 2048 // 2 + 1
+    # feat.yaml applies hf_cut_hz: 16000 → discrete bin count, not full 1025 bins
+    assert n_freq == 744
     assert channels == 1
-    assert n_time > 0
+    assert n_time == cfg.features.frames_for_duration(cfg.training.crop.window_sec)
 
 
 def test_to_flat_dict(project_dir):

@@ -59,7 +59,7 @@ def build_dataset(
     """Build a tf.data.Dataset from feature manifest entries.
 
     For each .npy spectrogram, generates `samples_per_file` random crops
-    along the time axis.
+    along the time axis (axis 0).
 
     Args:
         entries: List of feature manifest entry dicts (feature_path, label, n_frames).
@@ -72,7 +72,7 @@ def build_dataset(
 
     Returns:
         tf.data.Dataset yielding (spectrogram_crop, label) batches.
-        Shapes: ((batch, n_freq, crop_frames, 1), (batch,))
+        Shapes: ((batch, crop_frames, n_freq, 1), (batch,))
     """
     paths = [e["feature_path"] for e in entries]
     labels = [e["label"] for e in entries]
@@ -89,7 +89,7 @@ def build_dataset(
 
     def _process_entry(path_tensor, label, n_frames):
         spec = tf.numpy_function(_load_npy, [path_tensor], tf.float32)
-        # spec shape is (n_freq, n_frames_actual) — set static freq dim
+        # spec shape is (n_frames, n_freq) — time-major .npy layout
         spec.set_shape([None, None])
 
         crops = _random_crop_spectrogram(spec, n_frames, crop_frames, samples_per_file, rng)
@@ -122,14 +122,14 @@ def _random_crop_spectrogram(
     """Extract random time-axis crops from a spectrogram.
 
     Args:
-        spec: (n_freq, n_frames) spectrogram tensor.
+        spec: (n_time_frames, n_freq) spectrogram tensor.
         n_frames: Number of time frames (scalar).
-        crop_frames: Width of each crop in frames.
+        crop_frames: Time width of each crop.
         num_crops: Number of crops to extract.
         rng: TF random generator.
 
     Returns:
-        (num_crops, n_freq, crop_frames, 1) tensor.
+        (num_crops, crop_frames, n_freq, 1) tensor.
     """
     max_start = tf.maximum(n_frames - crop_frames, 1)
     starts = rng.uniform(
@@ -137,9 +137,9 @@ def _random_crop_spectrogram(
     )
 
     def _crop_one(start):
-        cropped = spec[:, start : start + crop_frames]
-        cropped = tf.ensure_shape(cropped, [None, crop_frames])
-        return tf.expand_dims(cropped, axis=-1)  # (n_freq, crop_frames, 1)
+        cropped = spec[start : start + crop_frames, :]
+        cropped = tf.ensure_shape(cropped, [crop_frames, None])
+        return tf.expand_dims(cropped, axis=-1)  # (crop_frames, n_freq, 1)
 
     crops = tf.map_fn(_crop_one, starts, fn_output_signature=tf.float32)
     return crops

@@ -22,7 +22,7 @@ def build_model(model_cfg: ModelConfig, input_shape: tuple[int, int, int]) -> Mo
 
     Args:
         model_cfg: Model configuration (backbone, head, output).
-        input_shape: (n_freq_bins, n_time_frames, 1).
+        input_shape: (n_time_frames, n_freq_bins, 1).
 
     Returns:
         Compiled-ready Keras Model (not yet compiled — caller handles that).

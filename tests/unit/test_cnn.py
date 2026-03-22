@@ -58,7 +58,7 @@ def small_model_cfg():
     )
 
 
-INPUT_SHAPE = (743, 67, 1)  # from stft_db_44k + 0.78s crop (hf_cut applied)
+INPUT_SHAPE = (67, 743, 1)  # (time, freq, ch) — stft_db_44k + 0.78s crop (hf_cut)
 
 
 def test_build_model_output_shape(model_cfg):

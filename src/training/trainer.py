@@ -113,7 +113,7 @@ def train(
     tf.random.set_seed(cfg.training.seed)
 
     input_shape = cfg.input_shape
-    crop_frames = input_shape[1]
+    crop_frames = input_shape[0]
 
     logger.info("Input shape: %s", input_shape)
     logger.info("Crop frames: %d (%.3fs)", crop_frames, cfg.training.crop.window_sec)

@@ -246,11 +246,12 @@ class ExperimentConfig:
     def input_shape(self) -> tuple[int, int, int]:
         """Compute model input shape from features + training crop config.
 
-        Returns (n_freq_bins, n_time_frames, 1) for 2D CNN.
+        Returns (n_time_frames, n_freq_bins, 1) for 2D CNN — time-major,
+        consistent with stored .npy spectrograms and tf.signal.stft layout.
         """
         n_freq = self.features.n_freq_bins
         n_time = self.features.frames_for_duration(self.training.crop.window_sec)
-        return (n_freq, n_time, 1)
+        return (n_time, n_freq, 1)
 
     def to_flat_dict(self, prefix: str = "") -> dict[str, Any]:
         """Flatten config to a single-level dict for MLflow param logging.

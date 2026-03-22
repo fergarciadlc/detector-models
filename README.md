@@ -71,7 +71,7 @@ configs differ (dataset, feature params, possibly lighter model for broadcast).
 │          6. Export feature manifest                          │
 │  Output: data/features/{feature_name}/                      │
 │          ├── train/ val/ test/                               │
-│          │   └── {filename}.npy  (n_freq, n_frames)         │
+│          │   └── {filename}.npy  (n_frames, n_freq)         │
 │          └── feature_manifest.json                          │
 └──────────────────────┬──────────────────────────────────────┘
                        │
@@ -344,12 +344,18 @@ output:
 
 ## 5. Feature Storage Strategy
 
-One `.npy` file per source audio file containing the **full spectrogram**:
+One `.npy` file per source audio file containing the **full spectrogram**.
+
+### Tensor layout: time-major `(n_frames, n_freq_bins)`
+
+Arrays on disk and model inputs use **time on axis 0**, **frequency on axis 1** (channel last: `(time, freq, 1)` for `Conv2D`). This matches `tf.signal.stft`’s frame×bin ordering and aligns with the Deezer reference pipeline. Librosa’s STFT is transposed once when building features so all stages share one convention.
+
+**Implication:** Any `.npy` produced **before** this layout change must be **re-extracted** (Stage 2); old checkpoints are **not** compatible with the new input geometry unless you transpose inputs to match how the model was trained.
 
 ```text
 data/features/stft_db_44k/
 ├── train/
-│   ├── song_001.npy    # shape: (n_freq_bins, n_frames) — variable n_frames
+│   ├── song_001.npy    # shape: (n_frames, n_freq_bins) — variable n_frames
 │   ├── song_002.npy
 │   └── ...
 ├── val/

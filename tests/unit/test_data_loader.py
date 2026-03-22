@@ -18,7 +18,7 @@ def feature_dir(tmp_path):
 
     for i in range(n_files):
         n_frames = np.random.randint(200, 500)
-        spec = np.random.randn(n_freq, n_frames).astype(np.float32)
+        spec = np.random.randn(n_frames, n_freq).astype(np.float32)
         npy_path = tmp_path / f"spec_{i}.npy"
         np.save(npy_path, spec)
 
@@ -81,8 +81,8 @@ def test_build_dataset_shapes(feature_dir):
     batch = next(iter(ds))
     specs, labels = batch
 
-    assert specs.shape[1] == 743       # n_freq
-    assert specs.shape[2] == crop_frames  # crop width
+    assert specs.shape[1] == crop_frames  # time (crop width)
+    assert specs.shape[2] == 743          # n_freq
     assert specs.shape[3] == 1          # channel
     assert labels.shape[0] == specs.shape[0]
 
