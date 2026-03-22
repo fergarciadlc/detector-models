@@ -192,28 +192,27 @@ def main(argv: list[str] | None = None) -> None:
         json.dump(report, f, indent=2)
     logger.info("Saved report: %s", report_path)
 
-    # Log to MLflow
-    mlf = MLflowLogger(
-        experiment_name="detector-models",
-        run_name=f"{cfg.name}-eval",
-    )
-    mlf.start_run(run_name=f"{cfg.name}-eval")
-    mlf.log_params({
-        "experiment": cfg.name,
-        "threshold": threshold,
-        "test_files": len(test_entries),
-        "crop_frames": crop_frames,
-        "stage": "evaluation",
-    })
-    mlf.log_metrics(metrics)
+    # Log to MLflow — resume the training run so everything is in one place
+    artifact_dir = Path("data/artifacts") / cfg.name
+    mlf = MLflowLogger(experiment_name="detector-models")
+
+    run_meta = MLflowLogger.load_run_meta(artifact_dir)
+    if run_meta:
+        mlf.resume_run(run_meta["run_id"])
+    else:
+        logger.warning("No training run found — creating a standalone eval run")
+        mlf.start_run(run_name=f"{cfg.name}-eval")
+
+    eval_metrics = {f"eval_{k}": v for k, v in metrics.items()}
+    mlf.log_metrics(eval_metrics)
     if sweep_result:
         mlf.log_metrics({
-            "sweep_best_threshold": sweep_result["best_threshold"],
-            "sweep_best_f1": sweep_result["best_f1"],
+            "eval_sweep_best_threshold": sweep_result["best_threshold"],
+            "eval_sweep_best_f1": sweep_result["best_f1"],
         })
-    mlf.log_artifact(report_path)
+    mlf.log_artifact(report_path, artifact_path="eval")
     for plot_path in plot_paths:
-        mlf.log_artifact(plot_path)
+        mlf.log_artifact(plot_path, artifact_path="eval")
     mlf.end_run()
 
     # Print summary

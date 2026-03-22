@@ -7,11 +7,13 @@ Builds model, compiles, trains with callbacks, and optionally logs to MLflow.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
 import tensorflow as tf
+import yaml
 
 from src.config import ExperimentConfig
 from src.mlflow_logger import MLflowLogger
@@ -45,6 +47,14 @@ def _build_callbacks(
             monitor="val_loss",
             save_best_only=True,
             verbose=1,
+        )
+    )
+
+    callbacks.append(
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=str(checkpoint_path / "last_model.keras"),
+            save_best_only=False,
+            verbose=0,
         )
     )
 
@@ -137,7 +147,7 @@ def train(
     callbacks = _build_callbacks(cfg, checkpoint_path)
 
     # MLflow
-    mlf = MLflowLogger(experiment_name="detector-models", run_name=cfg.name)
+    mlf = MLflowLogger(experiment_name="detector-models")
     mlf.start_run(run_name=cfg.name)
     mlf.log_params(cfg.to_flat_dict())
 
@@ -153,12 +163,21 @@ def train(
         verbose=2,
     )
 
-    best_model_path = str(checkpoint_path / "best_model.keras")
+    # Save training artifacts
+    best_model_path = checkpoint_path / "best_model.keras"
+    last_model_path = checkpoint_path / "last_model.keras"
+
+    _save_training_history(history, checkpoint_path)
+    _save_model_summary(model, checkpoint_path)
+    _save_config_snapshot(cfg, checkpoint_path)
+
     mlf.log_artifact(best_model_path)
+    mlf.save_run_meta(checkpoint_path)
     mlf.end_run()
 
     result = {
-        "checkpoint_path": best_model_path,
+        "checkpoint_path": str(best_model_path),
+        "last_checkpoint_path": str(last_model_path),
         "epochs_run": len(history.history.get("loss", [])),
         "final_train_loss": history.history["loss"][-1],
         "final_val_loss": history.history["val_loss"][-1],
@@ -167,3 +186,29 @@ def train(
     }
 
     return result
+
+
+def _save_training_history(history, checkpoint_path: Path) -> None:
+    """Save full epoch-by-epoch metrics for offline analysis."""
+    hist = {k: [float(v) for v in vals] for k, vals in history.history.items()}
+    path = checkpoint_path / "training_history.json"
+    with open(path, "w") as f:
+        json.dump(hist, f, indent=2)
+    logger.info("Saved training history: %s", path)
+
+
+def _save_model_summary(model: tf.keras.Model, checkpoint_path: Path) -> None:
+    """Save model architecture summary to a text file."""
+    lines: list[str] = []
+    model.summary(print_fn=lines.append)
+    path = checkpoint_path / "model_summary.txt"
+    path.write_text("\n".join(lines))
+    logger.info("Saved model summary: %s", path)
+
+
+def _save_config_snapshot(cfg: ExperimentConfig, checkpoint_path: Path) -> None:
+    """Save a frozen copy of the experiment config for reproducibility."""
+    path = checkpoint_path / "config_snapshot.yaml"
+    with open(path, "w") as f:
+        yaml.dump(cfg.to_flat_dict(), f, default_flow_style=False, sort_keys=False)
+    logger.info("Saved config snapshot: %s", path)
