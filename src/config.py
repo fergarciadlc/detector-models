@@ -104,6 +104,14 @@ class STFTConfig:
 
 
 @dataclass
+class MelConfig:
+    n_mels: int
+    fmin: float = 0.0
+    fmax: float | None = None
+    power: float = 2.0
+
+
+@dataclass
 class NormalizationConfig:
     strategy: str  # fixed | per_sample | global_stats
     mean: float | None = None
@@ -117,16 +125,22 @@ class NormalizationConfig:
 @dataclass
 class FeaturesConfig:
     name: str
-    type: str  # stft_magnitude_db | mel_spectrogram | mfcc
+    type: str  # stft_magnitude_db | mel_spectrogram_db
     audio: AudioConfig
     stft: STFTConfig
     normalization: NormalizationConfig
     storage: str  # full
     output_format: str  # npy
+    mel: MelConfig | None = None
 
     @property
     def n_freq_bins(self) -> int:
         """Number of frequency bins in the spectrogram (after hf_cut if set)."""
+        if self.type == "mel_spectrogram_db":
+            if self.mel is None:
+                raise ValueError("Feature type 'mel_spectrogram_db' requires 'mel' config.")
+            return self.mel.n_mels
+
         full_bins = self.stft.n_fft // 2 + 1
         if self.audio.hf_cut_hz is not None:
             freq_per_bin = self.audio.sample_rate / self.stft.n_fft
@@ -336,6 +350,16 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
                 n_fft=features_raw["stft"]["n_fft"],
                 win_length=features_raw["stft"]["win_length"],
                 hop_length=features_raw["stft"]["hop_length"],
+            ),
+            mel=(
+                MelConfig(
+                    n_mels=features_raw["mel"]["n_mels"],
+                    fmin=features_raw["mel"].get("fmin", 0.0),
+                    fmax=features_raw["mel"].get("fmax"),
+                    power=features_raw["mel"].get("power", 2.0),
+                )
+                if "mel" in features_raw
+                else None
             ),
             normalization=NormalizationConfig(
                 strategy=features_raw["normalization"]["strategy"],

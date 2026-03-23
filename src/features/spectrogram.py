@@ -1,9 +1,11 @@
 # src/features/spectrogram.py
 """
-Compute spectrograms from audio waveforms.
+Compute feature maps from audio waveforms.
 
-Supports STFT magnitude in dB with optional high-frequency cut
-and fixed/per-sample normalization.
+Supports:
+- STFT magnitude in dB with optional high-frequency cut
+- Mel spectrogram in dB
+with fixed/per-sample normalization.
 """
 
 from __future__ import annotations
@@ -28,9 +30,7 @@ def compute_spectrogram(
     y: np.ndarray,
     features_cfg: FeaturesConfig,
 ) -> np.ndarray:
-    """Compute a full-length spectrogram from a waveform.
-
-    Pipeline: STFT -> magnitude -> dB -> hf_cut -> normalize.
+    """Compute a full-length time-major feature map from a waveform.
 
     Args:
         y: 1-D float32 waveform at features_cfg.audio.sample_rate.
@@ -38,18 +38,31 @@ def compute_spectrogram(
 
     Returns:
         2-D float32 array of shape (n_frames, n_freq_bins), time-major
-        (matches tf.signal.stft frame x bin order). ``n_freq_bins`` may be
-        reduced if hf_cut_hz is set.
+        (matches tf.signal.stft frame x bin order for STFT features).
     """
-    stft = features_cfg.stft
+    extractors = {
+        "stft_magnitude_db": _compute_stft_magnitude_db,
+        "mel_spectrogram_db": _compute_mel_spectrogram_db,
+    }
+    try:
+        extractor = extractors[features_cfg.type]
+    except KeyError as exc:
+        raise ValueError(f"Unknown feature type: {features_cfg.type}") from exc
 
+    S_db = extractor(y, features_cfg)
+    S_db = _normalize(S_db, features_cfg)
+    return np.ascontiguousarray(S_db.T.astype(np.float32))
+
+
+def _compute_stft_magnitude_db(y: np.ndarray, features_cfg: FeaturesConfig) -> np.ndarray:
+    """STFT magnitude -> dB, optionally cropped in frequency."""
+    stft = features_cfg.stft
     S = librosa.stft(
         y,
         n_fft=stft.n_fft,
         hop_length=stft.hop_length,
         win_length=stft.win_length,
     )
-
     S_mag = np.abs(S)
     S_db = librosa.amplitude_to_db(S_mag, ref=np.max)
 
@@ -60,11 +73,28 @@ def compute_spectrogram(
             features_cfg.audio.hf_cut_hz,
         )
         S_db = S_db[:max_bin, :]
+    return S_db
 
-    S_db = _normalize(S_db, features_cfg)
 
-    # Librosa STFT is (freq, time); store and feed the model as (time, freq).
-    return np.ascontiguousarray(S_db.T.astype(np.float32))
+def _compute_mel_spectrogram_db(y: np.ndarray, features_cfg: FeaturesConfig) -> np.ndarray:
+    """Power mel spectrogram -> dB."""
+    if features_cfg.mel is None:
+        raise ValueError("Feature type 'mel_spectrogram_db' requires 'mel' config.")
+
+    stft = features_cfg.stft
+    mel = features_cfg.mel
+    S_mel = librosa.feature.melspectrogram(
+        y=y,
+        sr=features_cfg.audio.sample_rate,
+        n_fft=stft.n_fft,
+        hop_length=stft.hop_length,
+        win_length=stft.win_length,
+        n_mels=mel.n_mels,
+        fmin=mel.fmin,
+        fmax=mel.fmax,
+        power=mel.power,
+    )
+    return librosa.power_to_db(S_mel, ref=np.max)
 
 
 def _normalize(S: np.ndarray, features_cfg: FeaturesConfig) -> np.ndarray:

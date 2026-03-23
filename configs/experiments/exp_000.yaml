@@ -5,7 +5,7 @@ experiment:
     task: full_song_detection
 
 dataset: configs/datasets/fma_small.yaml
-features: configs/features/stft_db_44k.yaml
+features: configs/features/mel_16k_128.yaml
 model: configs/models/spec_cnn_v1.yaml
 
 training:
@@ -16,7 +16,7 @@ training:
   seed: 123
 
   crop:
-    window_sec: 0.78
+    window_sec: 5.0
     strategy: random
     samples_per_file: 5
 

@@ -1,0 +1,27 @@
+features:
+  name: mel_16k_128
+  type: mel_spectrogram_db
+
+  audio:
+    sample_rate: 16000
+    mono: true
+    hf_cut_hz: null
+
+  stft:
+    n_fft: 2048
+    win_length: 2048
+    hop_length: 1024
+
+  mel:
+    n_mels: 128
+    fmin: 20.0
+    fmax: 8000.0
+    power: 2.0
+
+  normalization:
+    strategy: fixed
+    mean: -4.0
+    std: 3.0
+
+  storage: full
+  output_format: npy

@@ -164,6 +164,27 @@ def test_input_shape(project_dir):
     assert n_time == cfg.features.frames_for_duration(cfg.training.crop.window_sec)
 
 
+def test_input_shape_with_mel_features(project_dir):
+    """Mel configs should report n_mels as the frequency dimension."""
+    feat_path = project_dir / "configs" / "features" / "feat.yaml"
+    raw = yaml.safe_load(feat_path.read_text())
+    raw["features"]["type"] = "mel_spectrogram_db"
+    raw["features"]["audio"]["sample_rate"] = 16000
+    raw["features"]["audio"]["hf_cut_hz"] = None
+    raw["features"]["stft"]["n_fft"] = 2048
+    raw["features"]["stft"]["win_length"] = 2048
+    raw["features"]["stft"]["hop_length"] = 1024
+    raw["features"]["mel"] = {"n_mels": 128, "fmin": 20.0, "fmax": 8000.0, "power": 2.0}
+    feat_path.write_text(yaml.dump(raw))
+
+    cfg = load_experiment(project_dir / "configs" / "experiments" / "exp.yaml")
+    n_time, n_freq, channels = cfg.input_shape
+
+    assert n_freq == 128
+    assert channels == 1
+    assert n_time == cfg.features.frames_for_duration(cfg.training.crop.window_sec)
+
+
 def test_to_flat_dict(project_dir):
     """Test flattening config for MLflow logging."""
     cfg = load_experiment(project_dir / "configs" / "experiments" / "exp.yaml")

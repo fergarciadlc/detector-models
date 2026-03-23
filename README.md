@@ -144,7 +144,7 @@ configs/experiments/exp_001.yaml
 | Config | Responsibility |
 |--------|---------------|
 | **dataset** | Paths to audio dirs, file format, split strategy/ratios/seed |
-| **features** | Sample rate, mono, hf cut, STFT params, normalization, storage format |
+| **features** | Sample rate, mono, feature type, STFT params, optional mel params, normalization, storage format |
 | **model** | Architecture type, backbone (filters/kernels/strides), head, output task |
 | **experiment** | References above three + training hyperparams, crop/window config, augmentation, evaluation metrics/plots |
 
@@ -155,7 +155,8 @@ configs/
 ├── datasets/
 │   └── fma_v1.yaml
 ├── features/
-│   └── stft_db_44k.yaml
+│   ├── stft_db_44k.yaml
+│   └── mel_16k_128.yaml
 ├── models/
 │   └── spec_cnn_v1.yaml
 └── experiments/
@@ -183,6 +184,10 @@ dataset:
 ```
 
 </details>
+
+You can now choose `features.type` per config:
+- `stft_magnitude_db`: linear-frequency STFT magnitude in dB (optional `hf_cut_hz`)
+- `mel_spectrogram_db`: mel spectrogram in dB (requires `mel.n_mels`, optional `fmin/fmax/power`)
 
 <details>
 <summary><strong>configs/features/stft_db_44k.yaml</strong></summary>
