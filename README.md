@@ -355,9 +355,14 @@ Arrays on disk and model inputs use **time on axis 0**, **frequency on axis 1** 
 ```text
 data/features/stft_db_44k/
 ├── train/
-│   ├── song_001.npy    # shape: (n_frames, n_freq_bins) — variable n_frames
-│   ├── song_002.npy
-│   └── ...
+│   ├── real/
+│   │   ├── song_001.npy    # shape: (n_frames, n_freq_bins) — variable n_frames
+│   │   ├── song_002.npy
+│   │   └── ...
+│   └── fake/
+│       ├── song_001.npy
+│       ├── song_002.npy
+│       └── ...
 ├── val/
 ├── test/
 └── feature_manifest.json
@@ -371,7 +376,7 @@ data/features/stft_db_44k/
   "dataset": "full_songs_v1",
   "entries": [
     {
-      "feature_path": "data/features/stft_db_44k/train/song_001.npy",
+      "feature_path": "data/features/stft_db_44k/train/real/song_001.npy",
       "source_audio": "/datasets/fma_small/song_001.mp3",
       "label": 0,
       "split": "train",
@@ -499,6 +504,8 @@ make run-all EXP=configs/experiments/exp_001.yaml
 # Or run stage by stage:
 make prepare  EXP=configs/experiments/exp_001.yaml
 make features EXP=configs/experiments/exp_001.yaml
+# Optional: parallelize Stage 2 feature extraction (default is serial)
+# make features EXP=configs/experiments/exp_001.yaml WORKERS=8
 make train    EXP=configs/experiments/exp_001.yaml
 make evaluate EXP=configs/experiments/exp_001.yaml
 
@@ -520,6 +527,8 @@ run-all          Full pipeline (prepare → features → train → evaluate)
 test             Run unit tests (locally)
 lint             Run ruff linter
 ```
+
+`WORKERS=<n>` (optional) can be used with `make features` to parallelize Stage 2 feature extraction.
 
 ### Docker Compose
 

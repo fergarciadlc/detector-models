@@ -18,9 +18,9 @@ import argparse
 import json
 import logging
 import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 from tqdm import tqdm
@@ -118,6 +118,7 @@ def extract_file(
 
     npy_name = _npy_filename(audio_file.path)
     npy_path = output_dir / npy_name
+    npy_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(npy_path, S)
 
     return {
@@ -181,7 +182,8 @@ def main(argv: list[str] | None = None) -> None:
         if workers == 1:
             for af in tqdm(files, desc=split_name, unit="file"):
                 try:
-                    entry = extract_file(af, features_cfg, out_dir)
+                    class_out_dir = out_dir / af.label_name
+                    entry = extract_file(af, features_cfg, class_out_dir)
                     entry["split"] = split_name
                     entries.append(entry)
                 except Exception:
@@ -191,7 +193,12 @@ def main(argv: list[str] | None = None) -> None:
             logger.info("Parallel extraction enabled: workers=%d", workers)
             with ProcessPoolExecutor(max_workers=workers) as ex:
                 future_to_af = {
-                    ex.submit(extract_file, af, features_cfg, out_dir): af
+                    ex.submit(
+                        extract_file,
+                        af,
+                        features_cfg,
+                        out_dir / af.label_name,
+                    ): af
                     for af in files
                 }
                 for fut in tqdm(
