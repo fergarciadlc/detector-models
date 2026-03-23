@@ -133,7 +133,7 @@ This avoids duplication when mixing datasets, features, and models.
 
 ```text
 configs/experiments/exp_001.yaml
-  ├── references → configs/datasets/full_songs_v1.yaml
+  ├── references → configs/datasets/fma_v1.yaml
   ├── references → configs/features/stft_db_44k.yaml
   ├── references → configs/models/spec_cnn_v1.yaml
   └── owns: training params, augmentation, evaluation settings
@@ -153,7 +153,7 @@ configs/experiments/exp_001.yaml
 ```text
 configs/
 ├── datasets/
-│   └── full_songs_v1.yaml
+│   └── fma_v1.yaml
 ├── features/
 │   └── stft_db_44k.yaml
 ├── models/
@@ -163,7 +163,7 @@ configs/
 ```
 
 <details>
-<summary><strong>configs/datasets/full_songs_v1.yaml</strong></summary>
+<summary><strong>configs/datasets/fma_v1.yaml</strong></summary>
 
 ```yaml
 dataset:
@@ -171,8 +171,8 @@ dataset:
   description: "FMA small vs AI-rebuilt FMA small"
 
   paths:
-    real: /datasets/fma_small
-    fake: /datasets/fma_rebuilt_small
+    real: /datasets/real
+    fake: /datasets/fake
 
   format: mp3
 
@@ -254,7 +254,7 @@ experiment:
   tags:
     task: full_song_detection
 
-dataset: configs/datasets/full_songs_v1.yaml
+dataset: configs/datasets/fma_v1.yaml
 features: configs/features/stft_db_44k.yaml
 model: configs/models/spec_cnn_v1.yaml
 
@@ -377,7 +377,7 @@ data/features/stft_db_44k/
   "entries": [
     {
       "feature_path": "data/features/stft_db_44k/train/real/song_001.npy",
-      "source_audio": "/datasets/fma_small/song_001.mp3",
+      "source_audio": "/datasets/real/song_001.mp3",
       "label": 0,
       "split": "train",
       "n_frames": 12900,
@@ -540,7 +540,9 @@ with SQLite backend and persistent named volume. The MLflow UI is available at
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `DATASETS_DIR` | Host path to raw audio datasets (mounted read-only at `/datasets`) | `/Users/you/datasets/fma` |
+| `DATASETS_DIR` | Host path mounted read-only at `/datasets` (use when all datasets live under one root) | `/Users/you/datasets/fma` |
+| `DATASETS_REAL_DIR` | Host path for the *real* dataset (mounted read-only at `/datasets/real`) | `/srv/.../fma/fma_medium` |
+| `DATASETS_FAKE_DIR` | Host path for the *fake* dataset (mounted read-only at `/datasets/fake`) | `/home/.../encodec3` |
 | `MLFLOW_PORT` | Host port for MLflow UI | `8010` |
 | `MLFLOW_TRACKING_URI` | MLflow server URL (used inside Docker containers) | `http://host.docker.internal:8010` |
 

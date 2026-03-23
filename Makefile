@@ -6,12 +6,25 @@ IMAGE := genai-audio-detector
 OS := $(shell uname -s)
 GPU_FLAGS ?= $(if $(filter Linux,$(OS)),--gpus all,)
 DATASETS_DIR ?= $(shell grep -s '^DATASETS_DIR=' .env | cut -d= -f2-)
+DATASETS_REAL_DIR ?= $(shell grep -s '^DATASETS_REAL_DIR=' .env | cut -d= -f2-)
+DATASETS_FAKE_DIR ?= $(shell grep -s '^DATASETS_FAKE_DIR=' .env | cut -d= -f2-)
+
+ifeq ($(strip $(DATASETS_REAL_DIR)),)
+	DATASETS_VOLUME_MOUNTS := -v $(DATASETS_DIR):/datasets:ro
+else
+	ifeq ($(strip $(DATASETS_FAKE_DIR)),)
+		$(error DATASETS_FAKE_DIR must be set when DATASETS_REAL_DIR is set)
+	endif
+	DATASETS_VOLUME_MOUNTS := \
+		-v $(DATASETS_REAL_DIR):/datasets/real:ro \
+		-v $(DATASETS_FAKE_DIR):/datasets/fake:ro
+endif
 
 DOCKER_RUN := docker run --rm \
 	$(GPU_FLAGS) \
 	-v $(PWD)/configs:/app/configs \
 	-v $(PWD)/data:/app/data \
-	-v $(DATASETS_DIR):/datasets:ro \
+	$(DATASETS_VOLUME_MOUNTS) \
 	--env-file .env \
 	$(IMAGE)
 
