@@ -160,7 +160,7 @@ def train(
         validation_data=val_ds,
         epochs=cfg.training.epochs,
         callbacks=callbacks,
-        verbose=2,
+        verbose=1,
     )
 
     # Save training artifacts
