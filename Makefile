@@ -4,7 +4,24 @@ SHELL := /bin/bash
 EXP ?= configs/experiments/exp_001.yaml
 IMAGE := genai-audio-detector
 OS := $(shell uname -s)
-GPU_FLAGS ?= $(if $(filter Linux,$(OS)),--gpus all,)
+BASE_DOCKERFILE ?= $(shell grep -s '^BASE_DOCKERFILE=' .env | cut -d= -f2-)
+GPU_DEVICE ?= $(shell grep -s '^GPU_DEVICE=' .env | cut -d= -f2-)
+
+ifeq ($(strip $(BASE_DOCKERFILE)),)
+	BASE_DOCKERFILE := docker/Dockerfile
+endif
+
+ifeq ($(strip $(GPU_DEVICE)),)
+	GPU_DEVICE := all
+endif
+
+ifeq ($(strip $(GPU_DEVICE)),all)
+	GPU_REQUEST := all
+else
+	GPU_REQUEST := device=$(GPU_DEVICE)
+endif
+
+GPU_FLAGS ?= $(if $(filter Linux,$(OS)),--gpus $(GPU_REQUEST),)
 DATASETS_DIR ?= $(shell grep -s '^DATASETS_DIR=' .env | cut -d= -f2-)
 DATASETS_REAL_DIR ?= $(shell grep -s '^DATASETS_REAL_DIR=' .env | cut -d= -f2-)
 DATASETS_FAKE_DIR ?= $(shell grep -s '^DATASETS_FAKE_DIR=' .env | cut -d= -f2-)
@@ -38,7 +55,11 @@ WORKERS ?=
 
 .PHONY: build
 build: ## Build Docker image
-	docker build -f docker/Dockerfile -t $(IMAGE) .
+	docker build -f $(BASE_DOCKERFILE) -t $(IMAGE) .
+
+.PHONY: gpu-check
+gpu-check: ## Check TensorFlow GPU visibility inside image
+	$(DOCKER_RUN) python -c "import tensorflow as tf; print('TF_VERSION=', tf.__version__); print('VISIBLE_GPUS=', tf.config.list_physical_devices('GPU'))"
 
 .PHONY: up
 up: ## Start MLflow

@@ -440,7 +440,8 @@ detector-models/
 │   └── evaluate.py                # CLI: Stage 4
 │
 ├── docker/
-│   └── Dockerfile                 # python:3.11-slim + audio deps
+│   ├── Dockerfile                 # CPU/default runtime image (python:3.11-slim)
+│   └── Dockerfile.gpu             # GPU runtime image (TF 2.11 base)
 │
 ├── tests/
 │   └── unit/
@@ -490,13 +491,16 @@ detector-models/
 ```bash
 # 1. Copy and edit environment variables
 cp .env.example .env
-# Edit .env: set DATASETS_DIR, MLFLOW_PORT, MLFLOW_TRACKING_URI
+# Edit .env: set DATASETS paths, MLflow vars, and optional BASE_DOCKERFILE/GPU_DEVICE
 
 # 2. Start MLflow tracking server
 make up
 
 # 3. Build the Docker image
 make build
+
+# Optional: build with GPU image
+# BASE_DOCKERFILE=docker/Dockerfile.gpu make build
 
 # 4. Run the full pipeline
 make run-all EXP=configs/experiments/exp_001.yaml
@@ -517,6 +521,7 @@ make prepare EXP=configs/experiments/exp_001.yaml LIMIT=100
 
 ```text
 build            Build Docker image
+gpu-check        Check TensorFlow GPU visibility inside image
 up               Start MLflow tracking server
 down             Stop MLflow
 prepare          Stage 1: Scan audio + split
@@ -529,6 +534,7 @@ lint             Run ruff linter
 ```
 
 `WORKERS=<n>` (optional) can be used with `make features` to parallelize Stage 2 feature extraction.
+`GPU_DEVICE=<id|all>` (optional) controls which GPU(s) are exposed to Docker runs on Linux.
 
 ### Docker Compose
 
@@ -545,6 +551,8 @@ with SQLite backend and persistent named volume. The MLflow UI is available at
 | `DATASETS_FAKE_DIR` | Host path for the *fake* dataset (mounted read-only at `/datasets/fake`) | `/home/.../encodec3` |
 | `MLFLOW_PORT` | Host port for MLflow UI | `8010` |
 | `MLFLOW_TRACKING_URI` | MLflow server URL (used inside Docker containers) | `http://host.docker.internal:8010` |
+| `BASE_DOCKERFILE` | Dockerfile used by `make build` | `docker/Dockerfile.gpu` |
+| `GPU_DEVICE` | GPU selection for pipeline containers (`all`, `0`, `1`, `0,1`) | `1` |
 
 ---
 

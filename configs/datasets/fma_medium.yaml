@@ -1,6 +1,6 @@
 dataset:
-  name: full_songs_v1
-  description: "FMA small vs AI-rebuilt FMA small"
+  name: fma_medium
+  description: "FMA small vs AI-rebuilt FMA medium"
   limit: null
 
   paths:
@@ -11,8 +11,8 @@ dataset:
     #
     # If instead a single DATASETS_DIR is mounted at /datasets, place both
     # datasets under /datasets/real and /datasets/fake.
-    real: /datasets/real/fma_small
-    fake: /datasets/fake/fma_small_rebuilt
+    real: /datasets/real/fma/fma_medium
+    fake: /datasets/fake/fma_rebuilt_medium
 
   format: mp3
 

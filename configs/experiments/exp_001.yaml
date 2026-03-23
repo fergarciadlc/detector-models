@@ -1,10 +1,10 @@
 experiment:
-  name: specnn_amplitude_baseline
-  description: "Baseline 2D CNN on STFT dB, FMA small dataset"
+  name: specnn_amplitude_fma_medium
+  description: "Baseline 2D CNN on STFT dB, FMA medium dataset"
   tags:
-    task: full_song_detection
+    task: full_song_detection_fma_medium
 
-dataset: configs/datasets/fma_v1.yaml
+dataset: configs/datasets/fma_medium.yaml
 features: configs/features/stft_db_44k.yaml
 model: configs/models/spec_cnn_v1.yaml
 
