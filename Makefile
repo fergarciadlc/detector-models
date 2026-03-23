@@ -17,6 +17,7 @@ DOCKER_RUN := docker run --rm \
 
 LIMIT ?=
 MANIFEST ?=
+WORKERS ?=
 
 # ============================================================
 # Setup
@@ -48,7 +49,8 @@ prepare: ## Stage 1: Scan audio + split
 features: ## Stage 2: Extract features
 	$(DOCKER_RUN) python -m pipelines.extract_features \
 		--config $(EXP) \
-		$(if $(MANIFEST),--manifest $(MANIFEST))
+		$(if $(MANIFEST),--manifest $(MANIFEST)) \
+		$(if $(WORKERS),--workers $(WORKERS))
 
 .PHONY: train
 train: ## Stage 3: Train

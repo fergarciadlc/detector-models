@@ -17,8 +17,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 from tqdm import tqdm
@@ -61,6 +63,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="data/features",
         help="Root dir for feature output (default: data/features)",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Number of parallel workers for feature extraction. "
+            "Use 1 to keep serial behavior (default: 1)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -90,6 +101,18 @@ def extract_file(
     output_dir: Path,
 ) -> dict:
     """Load audio, compute spectrogram, save .npy, return entry metadata."""
+    # Best-effort: keep each worker process to a single CPU thread for the heavy
+    # compute in numpy/FFTs. (Environment variables are read on first use.)
+    for k in (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+        "BLIS_NUM_THREADS",
+    ):
+        os.environ.setdefault(k, "1")
+
     y, duration_sec = load_audio(audio_file.path, features_cfg.audio)
     S = compute_spectrogram(y, features_cfg)
 
@@ -114,6 +137,7 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_experiment(args.config)
     features_cfg = cfg.features
     dataset_name = cfg.dataset.name
+    workers = max(1, int(args.workers))
 
     logger.info("=" * 60)
     logger.info("STAGE 2: FEATURE EXTRACTION")
@@ -146,18 +170,44 @@ def main(argv: list[str] | None = None) -> None:
     entries: list[dict] = []
     errors: list[dict] = []
 
-    for split_name, files in [("train", split.train), ("val", split.val), ("test", split.test)]:
+    for split_name, files in [
+        ("train", split.train),
+        ("val", split.val),
+        ("test", split.test),
+    ]:
         logger.info("Processing %s split (%d files)...", split_name, len(files))
         out_dir = split_dirs[split_name]
 
-        for af in tqdm(files, desc=split_name, unit="file"):
-            try:
-                entry = extract_file(af, features_cfg, out_dir)
-                entry["split"] = split_name
-                entries.append(entry)
-            except Exception:
-                logger.exception("Failed to process %s", af.path)
-                errors.append({"path": str(af.path), "split": split_name})
+        if workers == 1:
+            for af in tqdm(files, desc=split_name, unit="file"):
+                try:
+                    entry = extract_file(af, features_cfg, out_dir)
+                    entry["split"] = split_name
+                    entries.append(entry)
+                except Exception:
+                    logger.exception("Failed to process %s", af.path)
+                    errors.append({"path": str(af.path), "split": split_name})
+        else:
+            logger.info("Parallel extraction enabled: workers=%d", workers)
+            with ProcessPoolExecutor(max_workers=workers) as ex:
+                future_to_af = {
+                    ex.submit(extract_file, af, features_cfg, out_dir): af
+                    for af in files
+                }
+                for fut in tqdm(
+                    as_completed(future_to_af),
+                    total=len(files),
+                    desc=split_name,
+                    unit="file",
+                ):
+                    af = future_to_af[fut]
+                    try:
+                        entry = fut.result()
+                        entry["split"] = split_name
+                        entries.append(entry)
+                    except Exception:
+                        logger.exception("Failed to process %s", af.path)
+                        errors.append({"path": str(af.path), "split": split_name})
 
     # Write feature manifest
     feature_manifest = {
