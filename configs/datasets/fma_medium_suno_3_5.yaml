@@ -1,0 +1,15 @@
+dataset:
+  name: fma_medium_suno_3_5
+  description: "FMA medium vs Suno v3.5 "
+  limit: null
+
+  paths:
+    real: /datasets/FMA/fma_medium
+    fake: /datasets/sonics/fake_songs/fake_suno 
+
+  format: mp3
+
+  split:
+    strategy: stratified   # stratified | random | predefined
+    ratios: [0.70, 0.10, 0.20]   # train / val / test
+    seed: 123

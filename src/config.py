@@ -165,6 +165,7 @@ class BackboneConfig:
     activation: str
     batch_norm: bool
     pooling: str  # average | max
+    padding: str = "valid"
 
     def __post_init__(self):
         lengths = [len(self.filters), len(self.kernels), len(self.strides)]
@@ -382,6 +383,7 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
                 activation=model_raw["backbone"]["activation"],
                 batch_norm=model_raw["backbone"]["batch_norm"],
                 pooling=model_raw["backbone"]["pooling"],
+                padding=model_raw["backbone"].get("padding", "valid"),
             ),
             head=HeadConfig(
                 dense_units=model_raw["head"]["dense_units"],

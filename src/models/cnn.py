@@ -48,7 +48,7 @@ def build_model(model_cfg: ModelConfig, input_shape: tuple[int, int, int]) -> Mo
             )(Y)
             Y = layers.MaxPooling2D(
                 pool_size=stride,
-                padding="valid",
+                padding=bb.padding,
                 name=f"maxpool_{i}",
             )(Y)
         else:
