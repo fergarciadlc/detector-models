@@ -10,6 +10,7 @@ model:
     activation: relu
     batch_norm: true
     pooling: average
+    padding: same  # same | valid
 
   head:
     dense_units: 128
