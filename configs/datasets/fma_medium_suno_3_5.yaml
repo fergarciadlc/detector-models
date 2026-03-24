@@ -4,13 +4,6 @@ dataset:
   limit: null
 
   paths:
-    # Used by the Docker Makefile volume layout.
-    # If DATASETS_REAL_DIR/DATASETS_FAKE_DIR are set, these map to:
-    #   - /datasets/real
-    #   - /datasets/fake
-    #
-    # If instead a single DATASETS_DIR is mounted at /datasets, place both
-    # datasets under /datasets/real and /datasets/fake.
     real: /datasets/FMA/fma_medium
     fake: /datasets/sonics/fake_songs/fake_suno 
 
