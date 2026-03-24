@@ -37,6 +37,21 @@ def resolve_mlflow_experiment_name(config_value: str | None = None) -> str:
     return DEFAULT_MLFLOW_EXPERIMENT_NAME
 
 
+def resolve_mlflow_run_user() -> str | None:
+    """Resolve the user shown in MLflow run metadata."""
+    # Explicit user for MLflow run metadata.
+    run_user = os.environ.get("MLFLOW_RUN_USER", "").strip()
+    if run_user:
+        return run_user
+
+    # Reuse project-level username if available.
+    user_name = os.environ.get("USER_NAME", "").strip()
+    if user_name:
+        return user_name
+
+    return None
+
+
 class MLflowLogger:
     """Graceful MLflow wrapper — logs if server is available, warns otherwise."""
 
@@ -89,6 +104,9 @@ class MLflowLogger:
             stamped = self._timestamped_name(run_name)
             self._run = self._mlflow.start_run(run_name=stamped)
             self._run_id = self._run.info.run_id
+            run_user = resolve_mlflow_run_user()
+            if run_user:
+                self._mlflow.set_tag("mlflow.user", run_user)
             logger.info("MLflow run started: %s (id: %s)", stamped, self._run_id)
         except Exception:
             logger.warning("Failed to start MLflow run", exc_info=True)
