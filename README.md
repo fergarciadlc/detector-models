@@ -543,7 +543,7 @@ lint             Run ruff linter
 
 ### Docker Compose
 
-`compose.yaml` runs a self-hosted MLflow server (`ghcr.io/mlflow/mlflow:v2.11.1`)
+`compose.yaml` runs a self-hosted MLflow server (`ghcr.io/mlflow/mlflow:v3.5.1`)
 with SQLite backend and persistent named volume. The MLflow UI is available at
 `http://localhost:${MLFLOW_PORT}` (default 5000).
 
@@ -555,7 +555,7 @@ with SQLite backend and persistent named volume. The MLflow UI is available at
 | `DATASETS_REAL_DIR` | Host path for the *real* dataset (mounted read-only at `/datasets/real`) | `/srv/.../fma/fma_medium` |
 | `DATASETS_FAKE_DIR` | Host path for the *fake* dataset (mounted read-only at `/datasets/fake`) | `/home/.../encodec3` |
 | `MLFLOW_PORT` | Host port for MLflow UI | `8010` |
-| `MLFLOW_TRACKING_URI` | MLflow server URL (used inside Docker containers) | `http://host.docker.internal:8010` |
+| `MLFLOW_TRACKING_URI` | MLflow server URL (used inside Docker containers; Linux typically uses `172.17.0.1`, Mac/Windows typically use `host.docker.internal`) | `http://172.17.0.1:8010` |
 | `BASE_DOCKERFILE` | Dockerfile used by `make build` | `docker/Dockerfile.gpu` |
 | `GPU_DEVICE` | GPU selection for pipeline containers (`all`, `0`, `1`, `0,1`) | `1` |
 
