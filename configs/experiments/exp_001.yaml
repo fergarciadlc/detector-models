@@ -1,6 +1,7 @@
 experiment:
   name: specnn_amplitude_fma_medium_mel_16k_128
   description: "Baseline 2D CNN on STFT dB, FMA medium dataset"
+  mlflow_experiment: detector-models-music
   tags:
     task: full_song_detection_fma_medium
 

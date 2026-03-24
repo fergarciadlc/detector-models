@@ -16,7 +16,7 @@ import tensorflow as tf
 import yaml
 
 from src.config import ExperimentConfig
-from src.mlflow_logger import MLflowLogger
+from src.mlflow_logger import MLflowLogger, resolve_mlflow_experiment_name
 from src.models.cnn import build_model
 from src.training.data_loader import build_train_val_datasets
 
@@ -147,7 +147,9 @@ def train(
     callbacks = _build_callbacks(cfg, checkpoint_path)
 
     # MLflow
-    mlf = MLflowLogger(experiment_name="detector-models")
+    mlflow_experiment_name = resolve_mlflow_experiment_name(cfg.mlflow_experiment_name)
+    logger.info("MLflow experiment: %s", mlflow_experiment_name)
+    mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
     mlf.start_run(run_name=cfg.name)
     mlf.log_params(cfg.to_flat_dict())
 

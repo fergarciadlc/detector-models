@@ -254,6 +254,7 @@ class ExperimentConfig:
     training: TrainingConfig
     evaluation: EvaluationConfig
 
+    mlflow_experiment_name: str | None = None
     config_path: Path | None = None
 
     @property
@@ -325,6 +326,7 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
     return ExperimentConfig(
         name=exp["name"],
         description=exp["description"],
+        mlflow_experiment_name=exp.get("mlflow_experiment"),
         tags=exp.get("tags", {}),
         dataset=DatasetConfig(
             name=dataset_raw["name"],

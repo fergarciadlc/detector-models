@@ -23,7 +23,7 @@ import tensorflow as tf
 from src.config import load_experiment
 from src.evaluation.evaluator import evaluate_test_set
 from src.evaluation.metrics import compute_metrics, generate_plots, threshold_sweep
-from src.mlflow_logger import MLflowLogger
+from src.mlflow_logger import MLflowLogger, resolve_mlflow_experiment_name
 from src.training.data_loader import load_feature_manifest
 
 logging.basicConfig(
@@ -194,7 +194,9 @@ def main(argv: list[str] | None = None) -> None:
 
     # Log to MLflow — resume the training run so everything is in one place
     artifact_dir = Path("data/artifacts") / cfg.name
-    mlf = MLflowLogger(experiment_name="detector-models")
+    mlflow_experiment_name = resolve_mlflow_experiment_name(cfg.mlflow_experiment_name)
+    logger.info("MLflow experiment: %s", mlflow_experiment_name)
+    mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
 
     run_meta = MLflowLogger.load_run_meta(artifact_dir)
     if run_meta:

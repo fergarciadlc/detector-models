@@ -1,6 +1,7 @@
 experiment:
   name: specnn_amplitude_fma_small
   description: "Baseline 2D CNN on STFT dB, FMA small dataset"
+  mlflow_experiment: detector-models-music
   tags:
     task: full_song_detection
 

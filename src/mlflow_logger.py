@@ -24,6 +24,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 RUN_META_FILENAME = "mlflow_run.json"
+DEFAULT_MLFLOW_EXPERIMENT_NAME = "detector-models"
+
+
+def resolve_mlflow_experiment_name(config_value: str | None = None) -> str:
+    """Resolve MLflow experiment with env override precedence."""
+    env_value = os.environ.get("MLFLOW_EXPERIMENT_NAME", "").strip()
+    if env_value:
+        return env_value
+    if config_value and config_value.strip():
+        return config_value.strip()
+    return DEFAULT_MLFLOW_EXPERIMENT_NAME
 
 
 class MLflowLogger:

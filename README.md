@@ -556,6 +556,7 @@ with SQLite backend and persistent named volume. The MLflow UI is available at
 | `DATASETS_FAKE_DIR` | Host path for the *fake* dataset (mounted read-only at `/datasets/fake`) | `/home/.../encodec3` |
 | `MLFLOW_PORT` | Host port for MLflow UI | `8010` |
 | `MLFLOW_TRACKING_URI` | MLflow server URL (used inside Docker containers; Linux typically uses `172.17.0.1`, Mac/Windows typically use `host.docker.internal`) | `http://172.17.0.1:8010` |
+| `MLFLOW_EXPERIMENT_NAME` | Optional override for MLflow experiment name (takes precedence over experiment YAML) | `detector-models-dev` |
 | `BASE_DOCKERFILE` | Dockerfile used by `make build` | `docker/Dockerfile.gpu` |
 | `GPU_DEVICE` | GPU selection for pipeline containers (`all`, `0`, `1`, `0,1`) | `1` |
 
