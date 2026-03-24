@@ -1,0 +1,46 @@
+experiment:
+  name: specnn_amplitude_dzr_mel_16k_128
+  description: "Baseline 2D CNN on STFT dB, Sonics fake vs FMA medium dataset"
+  tags:
+    task: full_song_detection_fma_medium_vs_sonics_ai
+
+dataset: configs/datasets/fma_medium_suno_3_5.yaml
+features: configs/features/mel_16k_128.yaml
+model: configs/models/spec_cnn_v1.yaml
+
+training:
+  epochs: 100
+  batch_size: 50
+  learning_rate: 0.001
+  optimizer: adam
+  seed: 123
+
+  crop:
+    window_sec: 0.78
+    strategy: random
+    samples_per_file: 5
+
+  shuffle_buffer_multiplier: 2
+
+  callbacks:
+    early_stopping:
+      monitor: val_loss
+      patience: 15
+    reduce_lr:
+      monitor: val_loss
+      factor: 0.5
+      patience: 5
+
+  augmentation:
+    enabled: false
+    # pipeline:
+    #   - name: affine
+    #     gain_db: [-6, 6]
+
+evaluation:
+  metrics: [accuracy, f1, auc_roc, eer]
+  plots: [confusion_matrix, det_curve, roc_curve]
+  threshold_sweep:
+    enabled: true
+    range: [0.1, 0.9]
+    step: 0.05
