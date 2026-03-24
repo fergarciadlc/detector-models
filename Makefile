@@ -1,8 +1,13 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
+USER_NAME ?= $(shell grep -s '^USER_NAME=' .env | cut -d= -f2-)
+
+ifeq ($(strip $(USER_NAME)),)
+	USER_NAME := $(shell whoami)
+endif
 
 EXP ?= configs/experiments/exp_001.yaml
-IMAGE := genai-audio-detector
+IMAGE := genai-audio-detector-$(USER_NAME)
 OS := $(shell uname -s)
 BASE_DOCKERFILE ?= $(shell grep -s '^BASE_DOCKERFILE=' .env | cut -d= -f2-)
 GPU_DEVICE ?= $(shell grep -s '^GPU_DEVICE=' .env | cut -d= -f2-)
