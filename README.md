@@ -1,8 +1,8 @@
 # Audio Classification Pipeline — Development Notes
 
-> **Status**: MVP complete — all 4 pipeline stages implemented and running
-> **Last updated**: 2026-03-21
-> **Stage**: Full pipeline operational (Data Prep → Feature Extraction → Training → Evaluation)
+> **Status**: MVP complete — all 4 pipeline stages implemented and running; predict pipeline added
+> **Last updated**: 2026-03-25
+> **Stage**: Full pipeline operational (Data Prep → Feature Extraction → Training → Evaluation → Predict)
 
 ---
 
@@ -103,6 +103,46 @@ configs differ (dataset, feature params, possibly lighter model for broadcast).
 │  Output: MLflow artifacts (plots, reports, metrics)         │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Predict — offline inference on unlabeled audio
+
+A standalone pipeline that runs independently of the training stages:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  PREDICT (pipelines/predict.py)                             │
+│                                                             │
+│  Input:  Trained model + unlabeled audio                    │
+│  Steps:  1. Resolve input: single file / directory /        │
+│             .txt path list                                  │
+│          2a. On-the-fly: load audio → compute spectrogram   │
+│              (parallel extraction via --workers)            │
+│          2b. Or: load pre-extracted .npy via feature        │
+│              manifest (skips extraction entirely)           │
+│          3. Strided-window inference per file               │
+│          4. Aggregate window scores → per-file stats        │
+│          5. Stream results incrementally to disk or         │
+│             terminal (no full-dataset memory buffer)        │
+│  Output: predictions.jsonl    (one entry per file)          │
+│          predictions.csv      (flat table)                  │
+│          predict_meta.json    (run metadata + summary)      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Per-file output fields:
+
+| Field | Always | Description |
+|-------|--------|-------------|
+| `filename`, `file_path` | ✅ | Source file identity |
+| `fake_score` | ✅ | Mean predicted probability (fake) across windows |
+| `n_windows`, `min_score`, `max_score`, `std_score` | ✅ | Window-level stats |
+| `duration_sec` | ✅ (audio mode) | Track duration |
+| `error` | ✅ | `null` on success, error message on failure |
+| `window_scores` | `--verbose` only | Per-window probabilities |
+
+No ground-truth labels are required. Threshold and label decisions are left to the caller.
+
+---
 
 ### Key Design Decisions
 
@@ -433,16 +473,19 @@ detector-models/
 │   │   ├── __init__.py
 │   │   ├── trainer.py             # Training loop + callbacks + MLflow
 │   │   └── data_loader.py         # tf.data pipeline from .npy
-│   └── evaluation/
-│       ├── __init__.py
-│       ├── evaluator.py           # Inference + per-file aggregation
-│       └── metrics.py             # Metrics + plots (sklearn/matplotlib)
+│   ├── evaluation/
+│   │   ├── __init__.py
+│   │   ├── evaluator.py           # Inference + per-file aggregation
+│   │   └── metrics.py             # Metrics + plots (sklearn/matplotlib)
+│   └── inference/
+│       └── predictor.py           # Inference engine for unlabeled audio
 │
 ├── pipelines/
 │   ├── prepare_data.py            # CLI: Stage 1
 │   ├── extract_features.py        # CLI: Stage 2
 │   ├── train.py                   # CLI: Stage 3
-│   └── evaluate.py                # CLI: Stage 4
+│   ├── evaluate.py                # CLI: Stage 4
+│   └── predict.py                 # CLI: Predict (unlabeled audio)
 │
 ├── docker/
 │   ├── Dockerfile                 # CPU/default runtime image (python:3.11-slim)
@@ -573,6 +616,7 @@ with SQLite backend and persistent named volume. The MLflow UI is available at
 | Stage 2: Feature Extraction | ✅ Done | `pipelines/extract_features.py` |
 | Stage 3: Training | ✅ Done | `pipelines/train.py` |
 | Stage 4: Evaluation | ✅ Done | `pipelines/evaluate.py` |
+| Predict (unlabeled audio) | ✅ Done | `pipelines/predict.py` |
 
 ### Source Modules
 
@@ -589,6 +633,7 @@ with SQLite backend and persistent named volume. The MLflow UI is available at
 | Training orchestrator | ✅ Done | `src/training/trainer.py` |
 | Evaluator (inference + aggregation) | ✅ Done | `src/evaluation/evaluator.py` |
 | Metrics + plots | ✅ Done | `src/evaluation/metrics.py` |
+| Inference engine (unlabeled audio) | ✅ Done | `src/inference/predictor.py` |
 
 ### Infrastructure
 
