@@ -14,32 +14,40 @@ Outputs are written incrementally (JSONL / CSV) to avoid memory buildup
 for large datasets. When --output-dir is omitted, results are streamed to
 the terminal instead.
 
+Feature configuration priority:
+    1. config_snapshot.yaml found next to the model (auto-discovered, preferred)
+       Guarantees feature params match exactly what the model was trained with.
+    2. --config experiment YAML (fallback when no snapshot exists)
+       A warning is printed; ensure params haven't drifted since training.
+
 Usage:
-    # On-the-fly from a folder
+    # Snapshot auto-discovered — no --config needed
     python -m pipelines.predict \\
-        --config configs/experiments/exp_001.yaml \\
-        --model-path data/artifacts/specnn_amplitude_fma_medium_mel_16k_128/best_model.keras \\
+        --model-path data/artifacts/specnn_.../best_model.keras \\
         --input /path/to/audio/folder --recursive \\
         --output-dir data/predictions/my_run
 
     # Single file, terminal output
     python -m pipelines.predict \\
-        --config configs/experiments/exp_001.yaml \\
         --model-path data/artifacts/.../best_model.keras \\
         --input /path/to/song.mp3
 
     # File list
     python -m pipelines.predict \\
-        --config configs/experiments/exp_001.yaml \\
         --model-path data/artifacts/.../best_model.keras \\
         --input my_files.txt --output-dir data/predictions/batch_run
 
     # Pre-extracted features
     python -m pipelines.predict \\
-        --config configs/experiments/exp_001.yaml \\
         --model-path data/artifacts/.../best_model.keras \\
         --feature-manifest data/features/mel_16k_128/feature_manifest.json \\
         --output-dir data/predictions/my_run
+
+    # Explicit --config override (e.g. model lives outside the artifact dir)
+    python -m pipelines.predict \\
+        --model-path /some/path/model.keras \\
+        --config configs/experiments/exp_001.yaml \\
+        --input /path/to/audio/folder
 """
 
 from __future__ import annotations
@@ -55,7 +63,7 @@ from pathlib import Path
 import tensorflow as tf
 from tqdm import tqdm
 
-from src.config import load_experiment
+from src.config import FeaturesConfig, load_experiment, load_features_from_snapshot
 from src.inference.predictor import PredictResult, predict_from_audio, predict_from_features
 from src.training.data_loader import load_feature_manifest
 
@@ -77,13 +85,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         type=str,
-        required=True,
-        help="Path to experiment config YAML (used for feature params and window size)",
+        default=None,
+        help=(
+            "Path to experiment config YAML. Optional when config_snapshot.yaml exists "
+            "next to the model (auto-discovered and used by default). Required only when "
+            "the model was saved without a snapshot."
+        ),
     )
     parser.add_argument(
-        "--model-path", "-m",
+        "--model-path",
+        "-m",
         type=str,
         required=True,
         help="Path to trained Keras model (.keras)",
@@ -91,7 +105,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument(
-        "--input", "-i",
+        "--input",
+        "-i",
         type=str,
         default=None,
         metavar="PATH",
@@ -180,8 +195,7 @@ def _resolve_audio_input(input_str: str, recursive: bool) -> list[Path]:
     if p.is_dir():
         pattern = "**/*" if recursive else "*"
         found = sorted(
-            f for f in p.glob(pattern)
-            if f.is_file() and f.suffix.lower() in _AUDIO_EXTENSIONS
+            f for f in p.glob(pattern) if f.is_file() and f.suffix.lower() in _AUDIO_EXTENSIONS
         )
         if not found:
             raise ValueError(
@@ -288,6 +302,57 @@ class _ReportWriter:
             self._csv_file.close()
 
 
+# ── Feature config resolution ────────────────────────────────────────────────
+
+_SNAPSHOT_FILENAME = "config_snapshot.yaml"
+
+
+def _resolve_feature_config(
+    model_path: Path,
+    config_arg: str | None,
+) -> tuple[FeaturesConfig, float, str, str]:
+    """Resolve feature config and window size for inference.
+
+    Prefers the config_snapshot.yaml co-located with the model (written by the
+    trainer at training time) so feature parameters are guaranteed to match the
+    checkpoint.  Falls back to a user-supplied experiment YAML when no snapshot
+    is present.
+
+    Args:
+        model_path: Path to the .keras model file.
+        config_arg: Value of --config, or None if not supplied.
+
+    Returns:
+        (features_cfg, window_sec, config_source, config_path_used)
+        config_source is "snapshot" or "experiment_yaml".
+    """
+    snapshot_path = model_path.parent / _SNAPSHOT_FILENAME
+
+    if snapshot_path.exists():
+        logger.info("Feature config: snapshot  (%s)", snapshot_path)
+        features_cfg, window_sec = load_features_from_snapshot(snapshot_path)
+        return features_cfg, window_sec, "snapshot", str(snapshot_path)
+
+    if config_arg is None:
+        logger.error(
+            "No %s found next to the model and --config was not provided.\n"
+            "  Model dir: %s\n"
+            "  Pass --config <experiment.yaml> to specify feature parameters.",
+            _SNAPSHOT_FILENAME,
+            model_path.parent,
+        )
+        sys.exit(1)
+
+    logger.warning(
+        "No %s found next to the model — falling back to --config.\n"
+        "  Ensure feature parameters in %s match what the model was trained with.",
+        _SNAPSHOT_FILENAME,
+        config_arg,
+    )
+    cfg = load_experiment(config_arg)
+    return cfg.features, cfg.training.crop.window_sec, "experiment_yaml", config_arg
+
+
 # ── Summary helpers ───────────────────────────────────────────────────────────
 
 
@@ -308,14 +373,16 @@ def _save_metadata(
     output_dir: Path,
     result: PredictResult,
     model_path: Path,
-    config_path: str,
+    config_source: str,
+    config_path_used: str,
     feature_config_name: str,
     crop_frames: int,
     window_sec: float,
 ) -> None:
     metadata = {
         "model_path": str(model_path),
-        "config": config_path,
+        "config_source": config_source,
+        "config_path": config_path_used,
         "feature_config": feature_config_name,
         "crop_frames": crop_frames,
         "window_sec": window_sec,
@@ -333,27 +400,30 @@ def _save_metadata(
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    cfg = load_experiment(args.config)
 
     logger.info("=" * 60)
     logger.info("PREDICT")
     logger.info("=" * 60)
-    logger.info("Config:        %s", args.config)
-    logger.info("Feature config: %s", cfg.features.name)
 
     model_path = Path(args.model_path)
     if not model_path.exists():
         logger.error("Model not found: %s", model_path)
         sys.exit(1)
-    logger.info("Loading model: %s", model_path)
-    model = tf.keras.models.load_model(model_path)
 
-    crop_frames = cfg.input_shape[0]
+    # Resolve feature config — snapshot next to model takes priority over --config
+    features_cfg, window_sec, config_source, config_path_used = _resolve_feature_config(
+        model_path, args.config
+    )
+    crop_frames = features_cfg.frames_for_duration(window_sec)
+
+    logger.info("Feature config: %s  [%s]", features_cfg.name, config_source)
+    logger.info("Loading model:  %s", model_path)
+    model = tf.keras.models.load_model(model_path)
     logger.info(
         "Window: %d frames (%.2f s at %d Hz)",
         crop_frames,
-        cfg.training.crop.window_sec,
-        cfg.features.audio.sample_rate,
+        window_sec,
+        features_cfg.audio.sample_rate,
     )
 
     output_dir = Path(args.output_dir) if args.output_dir else None
@@ -394,7 +464,7 @@ def main(argv: list[str] | None = None) -> None:
             result = predict_from_audio(
                 model=model,
                 audio_files=audio_files,
-                features_cfg=cfg.features,
+                features_cfg=features_cfg,
                 crop_frames=crop_frames,
                 batch_size=args.batch_size,
                 workers=max(1, args.workers),
@@ -411,10 +481,11 @@ def main(argv: list[str] | None = None) -> None:
             output_dir=output_dir,
             result=result,
             model_path=model_path,
-            config_path=args.config,
-            feature_config_name=cfg.features.name,
+            config_source=config_source,
+            config_path_used=config_path_used,
+            feature_config_name=features_cfg.name,
             crop_frames=crop_frames,
-            window_sec=cfg.training.crop.window_sec,
+            window_sec=window_sec,
         )
 
     _print_summary(result, output_dir)

@@ -296,6 +296,68 @@ class ExperimentConfig:
 # ── Loader (public API) ────────────────────────────────────────
 
 
+def load_features_from_snapshot(snapshot_path: str | Path) -> tuple[FeaturesConfig, float]:
+    """Load feature config and window size from a training config snapshot.
+
+    Config snapshots (``config_snapshot.yaml``) are written by the trainer
+    alongside each saved model and contain the exact flat config used during
+    that training run.  Using the snapshot for inference guarantees that
+    feature extraction parameters match the model, regardless of any changes
+    made to the original experiment YAML afterwards.
+
+    Args:
+        snapshot_path: Path to ``config_snapshot.yaml`` produced by Stage 3.
+
+    Returns:
+        Tuple of (FeaturesConfig, window_sec) — the only two things inference
+        needs from the training configuration.
+
+    Raises:
+        FileNotFoundError: If the snapshot file does not exist.
+        KeyError: If a required key is missing from the snapshot.
+    """
+    snapshot_path = Path(snapshot_path)
+    if not snapshot_path.exists():
+        raise FileNotFoundError(f"Config snapshot not found: {snapshot_path}")
+
+    flat = _load_yaml(snapshot_path)
+
+    features_cfg = FeaturesConfig(
+        name=str(flat["features.name"]),
+        type=str(flat["features.type"]),
+        audio=AudioConfig(
+            sample_rate=int(flat["features.audio.sample_rate"]),
+            mono=bool(flat["features.audio.mono"]),
+            hf_cut_hz=flat.get("features.audio.hf_cut_hz"),
+        ),
+        stft=STFTConfig(
+            n_fft=int(flat["features.stft.n_fft"]),
+            win_length=int(flat["features.stft.win_length"]),
+            hop_length=int(flat["features.stft.hop_length"]),
+        ),
+        normalization=NormalizationConfig(
+            strategy=str(flat["features.normalization.strategy"]),
+            mean=flat.get("features.normalization.mean"),
+            std=flat.get("features.normalization.std"),
+        ),
+        storage=str(flat["features.storage"]),
+        output_format=str(flat["features.output_format"]),
+        mel=(
+            MelConfig(
+                n_mels=int(flat["features.mel.n_mels"]),
+                fmin=float(flat.get("features.mel.fmin", 0.0)),
+                fmax=flat.get("features.mel.fmax"),
+                power=float(flat.get("features.mel.power", 2.0)),
+            )
+            if "features.mel.n_mels" in flat
+            else None
+        ),
+    )
+
+    window_sec = float(flat["training.crop.window_sec"])
+    return features_cfg, window_sec
+
+
 def load_experiment(config_path: str | Path) -> ExperimentConfig:
     """Load an experiment config and resolve all referenced sub-configs.
 
