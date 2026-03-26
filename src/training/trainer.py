@@ -44,7 +44,8 @@ def _build_callbacks(
     callbacks.append(
         tf.keras.callbacks.ModelCheckpoint(
             filepath=str(checkpoint_path / "best_model.keras"),
-            monitor="val_loss",
+            monitor="val_auc_roc",
+            mode="max",
             save_best_only=True,
             verbose=1,
         )
@@ -135,7 +136,7 @@ def train(
     model.compile(
         optimizer=optimizer,
         loss=cfg.model.output.loss,
-        metrics=["accuracy"],
+        metrics=["accuracy", tf.keras.metrics.AUC(name="auc_roc")],
     )
 
     model.summary(print_fn=logger.info)
