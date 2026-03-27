@@ -83,7 +83,6 @@ class DatasetConfig:
     paths: dict[str, str]  # {real: ..., fake: ...}
     format: str
     split: SplitConfig
-    limit: int | None = None  # max files per class, null = all
 
 
 # ── Features ────────────────────────────────────────────────────
@@ -255,6 +254,7 @@ class ExperimentConfig:
     training: TrainingConfig
     evaluation: EvaluationConfig
 
+    limit: int | None = None  # max files per class for this experiment (null = all)
     mlflow_experiment_name: str | None = None
     config_path: Path | None = None
 
@@ -327,6 +327,7 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
     return ExperimentConfig(
         name=exp["name"],
         description=exp["description"],
+        limit=exp.get("limit"),
         mlflow_experiment_name=exp.get("mlflow_experiment"),
         tags=exp.get("tags", {}),
         dataset=DatasetConfig(

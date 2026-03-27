@@ -1,7 +1,6 @@
 dataset:
   name: fma_medium_suno_3_5
   description: "FMA medium vs Suno v3.5 "
-  limit: null
 
   paths:
     real: /datasets/FMA/fma_medium
