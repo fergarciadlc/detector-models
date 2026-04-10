@@ -1,0 +1,48 @@
+experiment:
+  name: cnn_mtg_stft_db_44k_fma_medium_encodec
+  description: "CNN on STFT dB, FMA medium vs AI-rebuilt FMA medium with encodec"
+  # limit: 100
+  mlflow_experiment: detector-models-music
+  tags:
+    task: ai_music_detection_encodec
+
+dataset: configs/datasets/fma_medium.yaml
+features: configs/features/stft_db_44k.yaml
+model: configs/models/spec_cnn_v1.yaml
+
+training:
+  epochs: 100
+  batch_size: 50
+  learning_rate: 0.001
+  optimizer: adam
+  seed: 123
+
+  crop:
+    window_sec: 1.0
+    strategy: random
+    samples_per_file: 5
+
+  shuffle_buffer_multiplier: 2
+
+  callbacks:
+    early_stopping:
+      monitor: val_loss
+      patience: 15
+    reduce_lr:
+      monitor: val_loss
+      factor: 0.5
+      patience: 5
+
+  augmentation:
+    enabled: false
+    # pipeline:
+    #   - name: affine
+    #     gain_db: [-6, 6]
+
+evaluation:
+  metrics: [accuracy, f1, auc_roc, eer]
+  plots: [confusion_matrix, det_curve, roc_curve]
+  threshold_sweep:
+    enabled: true
+    range: [0.1, 0.9]
+    step: 0.05

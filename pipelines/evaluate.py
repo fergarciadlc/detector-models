@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> None:
             "eval_sweep_best_threshold": sweep_result["best_threshold"],
             "eval_sweep_best_f1": sweep_result["best_f1"],
         })
-    mlf.log_artifact(report_path, artifact_path="eval")
+    # mlf.log_artifact(report_path, artifact_path="eval")
     for plot_path in plot_paths:
         mlf.log_artifact(plot_path, artifact_path="eval")
     mlf.end_run()

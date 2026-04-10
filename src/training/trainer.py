@@ -175,6 +175,7 @@ def train(
     _save_config_snapshot(cfg, checkpoint_path)
 
     mlf.log_artifact(best_model_path)
+    mlf.log_artifact(checkpoint_path / "model_summary.txt")
     mlf.save_run_meta(checkpoint_path)
     mlf.end_run()
 
