@@ -1,7 +1,6 @@
 dataset:
   name: fma_small
   description: "FMA small vs AI-rebuilt FMA small"
-  limit: null
 
   paths:
     real: /datasets/fma/fma_small
