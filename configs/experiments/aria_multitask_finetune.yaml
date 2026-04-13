@@ -18,7 +18,7 @@ training:
   seed: 123
 
   # ── Fine-tuning ──
-  pretrained_weights: data/models/cnn_mtg_stft_db_44k_fma_medium_encodec/best_model.keras
+  pretrained_weights: data/artifacts/cnn_mtg_stft_db_44k_fma_medium_encodec/best_model.keras
   freeze_backbone_epochs: 5
 
   crop:
