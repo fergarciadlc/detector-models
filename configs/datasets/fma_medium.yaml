@@ -1,6 +1,6 @@
 dataset:
   name: fma_medium
-  description: "FMA small vs AI-rebuilt FMA medium"
+  description: "FMA medium vs AI-rebuilt FMA medium"
 
   paths:
     real: /datasets/FMA/fma_medium

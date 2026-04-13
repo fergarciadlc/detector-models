@@ -1,12 +1,12 @@
 experiment:
-  name: cnn_mtg_stft_db_44k
-  description: "CNN on STFT dB, MTG dataset"
-  limit: 1000
+  name: cnn_mtg_stft_db_44k_fma_medium_encodec
+  description: "CNN on STFT dB, FMA medium vs AI-rebuilt FMA medium with encodec"
+  # limit: 100
   mlflow_experiment: detector-models-music
   tags:
     task: ai_music_detection_encodec
 
-dataset: configs/datasets/mtg.yaml
+dataset: configs/datasets/fma_medium.yaml
 features: configs/features/stft_db_44k.yaml
 model: configs/models/spec_cnn_v1.yaml
 
