@@ -422,7 +422,6 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
             type=dataset_raw.get("type", "binary"),
             path=dataset_raw.get("path"),
             paths=dataset_raw.get("paths"),
-            limit=dataset_raw.get("limit"),
         ),
         features=FeaturesConfig(
             name=features_raw["name"],
