@@ -17,11 +17,17 @@ AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"}
 
 @dataclass
 class AudioFile:
-    """Represents a discovered audio file with its label."""
+    """Represents a discovered audio file with its label.
+
+    For binary datasets, `label` is 0 (real) or 1 (fake) and `ai_ratio` is None.
+    For regression datasets (e.g. ARIA), `ai_ratio` carries the continuous target
+    in [0, 1] and `label` / `label_name` are set to sentinel values (-1 / "regression").
+    """
 
     path: Path
-    label: int  # 0 = real, 1 = fake
-    label_name: str  # "real" or "fake"
+    label: int  # 0 = real, 1 = fake; -1 = sentinel for regression datasets
+    label_name: str  # "real", "fake", or "regression"
+    ai_ratio: float | None = None  # continuous target for regression datasets
 
 
 def scan_audio_dir(

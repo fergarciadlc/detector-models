@@ -17,6 +17,7 @@ import logging
 from pathlib import Path
 
 from src.config import load_experiment
+from src.data.aria_loader import load_aria_split
 from src.data.manifest import write_manifest
 from src.data.scanner import scan_dataset
 from src.data.splitter import stratified_split
@@ -60,34 +61,41 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_experiment(args.config)
     ds = cfg.dataset
 
-    # CLI --limit overrides config limit
-    limit = args.limit if args.limit is not None else ds.limit
+    # CLI --limit overrides experiment config limit
+    limit = args.limit if args.limit is not None else cfg.limit
 
     logger.info("=" * 60)
     logger.info("STAGE 1: DATA PREPARATION")
     logger.info("=" * 60)
-    logger.info("Dataset: %s", ds.name)
-    logger.info("Real audio: %s", ds.paths["real"])
-    logger.info("Fake audio: %s", ds.paths["fake"])
-    logger.info("Limit per class: %s", limit or "all")
+    logger.info("Dataset : %s  (type: %s)", ds.name, ds.type)
+    logger.info("Limit   : %s", limit or "all")
 
-    # Scan
-    files = scan_dataset(
-        paths=ds.paths,
-        format=ds.format,
-        limit=limit,
-    )
-
-    # Split
-    split = stratified_split(
-        files=files,
-        ratios=ds.split.ratios,
-        seed=ds.split.seed,
-    )
+    if ds.type == "regression":
+        # ARIA-style: split is predefined in the JSONL; just load and convert.
+        logger.info("Split file: %s", ds.split.predefined_path)
+        split = load_aria_split(
+            base_path=ds.path,
+            jsonl_path=ds.split.predefined_path,
+            limit=limit,
+        )
+    else:
+        # Binary: scan real/fake dirs and compute a stratified split.
+        logger.info("Real audio: %s", ds.paths["real"])
+        logger.info("Fake audio: %s", ds.paths["fake"])
+        files = scan_dataset(
+            paths=ds.paths,
+            format=ds.format,
+            limit=limit,
+        )
+        split = stratified_split(
+            files=files,
+            ratios=ds.split.ratios,
+            seed=ds.split.seed,
+        )
 
     # Write manifest
     suffix = f"_limit{limit}" if limit else ""
-    manifest_name = f"{ds.name}{suffix}_split.json"
+    manifest_name = f"{cfg.name}{suffix}_split.json"
     output_path = Path(args.output_dir) / manifest_name
 
     write_manifest(
@@ -96,6 +104,7 @@ def main(argv: list[str] | None = None) -> None:
         dataset_name=ds.name,
         metadata={
             "experiment": cfg.name,
+            "dataset_type": ds.type,
             "limit": limit,
             "split_seed": ds.split.seed,
             "split_strategy": ds.split.strategy,
@@ -106,13 +115,13 @@ def main(argv: list[str] | None = None) -> None:
     # Summary
     logger.info("-" * 60)
     for split_name, stats in split.summary.items():
-        logger.info(
-            "  %-6s: %4d files (real: %d, fake: %d)",
-            split_name,
-            stats["total"],
-            stats["real"],
-            stats["fake"],
-        )
+        if "real" in stats:
+            logger.info(
+                "  %-6s: %4d files (real: %d, fake: %d)",
+                split_name, stats["total"], stats["real"], stats["fake"],
+            )
+        else:
+            logger.info("  %-6s: %4d mixes", split_name, stats["total"])
     logger.info("-" * 60)
     logger.info("Manifest: %s", output_path)
     logger.info("Done.")

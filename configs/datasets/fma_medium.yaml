@@ -1,6 +1,7 @@
 dataset:
   name: fma_medium
   description: "FMA medium vs AI-rebuilt FMA medium"
+  type: binary_classification
 
   paths:
     real: /datasets/FMA/fma_medium

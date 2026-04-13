@@ -63,12 +63,14 @@ def _find_project_root(start: Path) -> Path:
 @dataclass
 class SplitConfig:
     strategy: str  # stratified | random | predefined
-    ratios: list[float]
-    seed: int
+    ratios: list[float] = field(default_factory=list)
+    seed: int = 42
     predefined_path: str | None = None
 
     def __post_init__(self):
-        if self.strategy != "predefined" and len(self.ratios) != 3:
+        if self.strategy == "predefined":
+            return  # split is already encoded externally; no ratio validation needed
+        if len(self.ratios) != 3:
             raise ValueError(
                 f"Split ratios must have 3 values [train, val, test], got {self.ratios}"
             )
@@ -80,10 +82,12 @@ class SplitConfig:
 class DatasetConfig:
     name: str
     description: str
-    paths: dict[str, str]  # {real: ..., fake: ...}
     format: str
     split: SplitConfig
-    limit: int | None = None  # max files per class, null = all
+    type: str = "binary"             # "binary" | "regression"
+    path: str | None = None          # single base dir (regression datasets)
+    paths: dict[str, str] | None = None  # {real, fake} dirs (binary datasets)
+    limit: int | None = None         # max files/tracks per class or split; null = all
 
 
 # ── Features ────────────────────────────────────────────────────
@@ -132,6 +136,7 @@ class FeaturesConfig:
     storage: str  # full
     output_format: str  # npy
     mel: MelConfig | None = None
+    max_duration_sec: float | None = None  # None = full file; set to cap extraction length
 
     @property
     def n_freq_bins(self) -> int:
@@ -406,14 +411,17 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
         dataset=DatasetConfig(
             name=dataset_raw["name"],
             description=dataset_raw.get("description", ""),
-            paths=dataset_raw["paths"],
             format=dataset_raw["format"],
             split=SplitConfig(
                 strategy=dataset_raw["split"]["strategy"],
-                ratios=dataset_raw["split"]["ratios"],
-                seed=dataset_raw["split"]["seed"],
+                ratios=dataset_raw["split"].get("ratios", []),
+                seed=dataset_raw["split"].get("seed", 42),
                 predefined_path=dataset_raw["split"].get("predefined_path"),
             ),
+            type=dataset_raw.get("type", "binary"),
+            path=dataset_raw.get("path"),
+            paths=dataset_raw.get("paths"),
+            limit=dataset_raw.get("limit"),
         ),
         features=FeaturesConfig(
             name=features_raw["name"],
@@ -445,6 +453,7 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
             ),
             storage=features_raw["storage"],
             output_format=features_raw["output_format"],
+            max_duration_sec=features_raw.get("max_duration_sec"),
         ),
         model=ModelConfig(
             name=model_raw["name"],

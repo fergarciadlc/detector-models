@@ -17,5 +17,10 @@ features:
     mean: -4.0
     std: 3.0
 
+  # null = full file. Set to a number (seconds) to cap extraction length and
+  # dramatically reduce .npy file size (e.g. 30 → ~7MB instead of ~59MB).
+  # The segment is chosen deterministically per file so re-extraction is stable.
+  max_duration_sec: 15
+
   storage: full
   output_format: npy

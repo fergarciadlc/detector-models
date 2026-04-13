@@ -55,12 +55,16 @@ def build_dataset(
     shuffle_buffer: int | None = None,
     seed: int = 42,
     is_training: bool = True,
-    output_type: str = "binary", # "binary" or "multitask"
+    output_type: str = "binary",  # "binary" | "multitask" | "regression"
 ) -> tf.data.Dataset:
     """Build a tf.data.Dataset from feature manifest entries.
 
     For each .npy spectrogram, generates `samples_per_file` random crops
     along the time axis (axis 0).
+
+    For `output_type == "multitask"` or `"regression"`, the continuous
+    `ai_ratio` field from the feature manifest is used as the label source
+    (falls back to casting `label` to float for binary-labelled datasets).
 
     Args:
         entries: List of feature manifest entry dicts (feature_path, label, n_frames).
@@ -76,8 +80,16 @@ def build_dataset(
         Shapes: ((batch, crop_frames, n_freq, 1), (batch,))
     """
     paths = [e["feature_path"] for e in entries]
-    labels = [e["label"] for e in entries]
     n_frames_list = [e["n_frames"] for e in entries]
+
+    # For continuous-output types use ai_ratio when present; fall back to label.
+    if output_type in ("multitask", "regression"):
+        labels = [
+            float(e["ai_ratio"]) if e.get("ai_ratio") is not None else float(e["label"])
+            for e in entries
+        ]
+    else:
+        labels = [e["label"] for e in entries]
 
     path_ds = tf.data.Dataset.from_tensor_slices(
         (paths, labels, n_frames_list)
@@ -99,11 +111,15 @@ def build_dataset(
             alpha_repeated = tf.repeat(alpha, samples_per_file)
             has_ai = tf.cast(alpha > 0.0, tf.float32)
             has_ai_repeated = tf.repeat(has_ai, samples_per_file)
-            labels = {
+            out_labels = {
                 "regression_output": alpha_repeated,
                 "binary_output": has_ai_repeated,
             }
-            return tf.data.Dataset.from_tensor_slices((crops, labels))
+            return tf.data.Dataset.from_tensor_slices((crops, out_labels))
+        elif output_type == "regression":
+            alpha = tf.cast(label, tf.float32)
+            alpha_repeated = tf.repeat(alpha, samples_per_file)
+            return tf.data.Dataset.from_tensor_slices((crops, alpha_repeated))
         else:
             label_repeated = tf.repeat(label, samples_per_file)
             return tf.data.Dataset.from_tensor_slices((crops, label_repeated))
