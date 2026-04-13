@@ -55,6 +55,7 @@ def build_dataset(
     shuffle_buffer: int | None = None,
     seed: int = 42,
     is_training: bool = True,
+    output_type: str = "binary", # "binary" or "multitask"
 ) -> tf.data.Dataset:
     """Build a tf.data.Dataset from feature manifest entries.
 
@@ -93,8 +94,19 @@ def build_dataset(
         spec.set_shape([None, None])
 
         crops = _random_crop_spectrogram(spec, n_frames, crop_frames, samples_per_file, rng)
-        label_repeated = tf.repeat(label, samples_per_file)
-        return tf.data.Dataset.from_tensor_slices((crops, label_repeated))
+        if output_type == "multitask":
+            alpha = tf.cast(label, tf.float32)
+            alpha_repeated = tf.repeat(alpha, samples_per_file)
+            has_ai = tf.cast(alpha > 0.0, tf.float32)
+            has_ai_repeated = tf.repeat(has_ai, samples_per_file)
+            labels = {
+                "regression_output": alpha_repeated,
+                "binary_output": has_ai_repeated,
+            }
+            return tf.data.Dataset.from_tensor_slices((crops, labels))
+        else:
+            label_repeated = tf.repeat(label, samples_per_file)
+            return tf.data.Dataset.from_tensor_slices((crops, label_repeated))
 
     ds = path_ds.interleave(
         _process_entry,
@@ -152,6 +164,7 @@ def build_train_val_datasets(
     batch_size: int,
     shuffle_buffer_multiplier: int = 2,
     seed: int = 42,
+    output_type: str = "binary",  # "binary" or "multitask"
 ) -> tuple[tf.data.Dataset, tf.data.Dataset]:
     """Build train and validation datasets from a feature manifest.
 
@@ -189,6 +202,7 @@ def build_train_val_datasets(
         shuffle_buffer=shuffle_buffer,
         seed=seed,
         is_training=True,
+        output_type=output_type,
     )
 
     val_ds = build_dataset(
@@ -199,6 +213,7 @@ def build_train_val_datasets(
         shuffle_buffer=None,
         seed=seed,
         is_training=False,
+        output_type=output_type,
     )
 
     return train_ds, val_ds

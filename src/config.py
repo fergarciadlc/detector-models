@@ -184,16 +184,25 @@ class HeadConfig:
 
 @dataclass
 class OutputConfig:
-    type: str  # binary | multiclass | regression
-    activation: str
-    loss: str
+    type: str  # binary | multiclass | multitask
+    activation: str = "sigmoid"
+    loss: str = "binary_crossentropy"
     threshold: float | None = None
     num_classes: int | None = None
     class_names: list[str] | None = None
+    # new multitask sub-head configs 
+    regression: dict[str, Any] | None = None
+    binary_head: dict[str, Any] | None = None
 
     def __post_init__(self):
         if self.type == "multiclass" and self.num_classes is None:
             raise ValueError("Output type 'multiclass' requires num_classes")
+        if self.type == "multitask":
+            if self.regression is None or self.binary_head is None:
+                raise ValueError(
+                    "Output type 'multitask' requires both 'regression' "
+                    "and 'binary_head' sub-configs"
+                )
 
 
 @dataclass
@@ -226,6 +235,9 @@ class TrainingConfig:
     shuffle_buffer_multiplier: int
     callbacks: dict[str, Any] = field(default_factory=dict)
     augmentation: dict[str, Any] = field(default_factory=lambda: {"enabled": False})
+    # new: fine-tuning support
+    pretrained_weights: str | None = None # path to .keras file
+    freeze_backbone_epochs: int = 0 # 0 = no freezing
 
 
 # ── Evaluation ──────────────────────────────────────────────────
@@ -454,11 +466,13 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
             ),
             output=OutputConfig(
                 type=model_raw["output"]["type"],
-                activation=model_raw["output"]["activation"],
-                loss=model_raw["output"]["loss"],
+                activation=model_raw["output"].get("activation", "sigmoid"),
+                loss=model_raw["output"].get("loss", ""),
                 threshold=model_raw["output"].get("threshold"),
                 num_classes=model_raw["output"].get("num_classes"),
                 class_names=model_raw["output"].get("class_names"),
+                regression=model_raw["output"].get("regression"),
+                binary_head=model_raw["output"].get("binary_head"),
             ),
         ),
         training=TrainingConfig(
@@ -475,6 +489,8 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
             shuffle_buffer_multiplier=train["shuffle_buffer_multiplier"],
             callbacks=train.get("callbacks", {}),
             augmentation=train.get("augmentation", {"enabled": False}),
+            pretrained_weights=train.get("pretrained_weights"),
+            freeze_backbone_epochs=train.get("freeze_backbone_epochs", 0),
         ),
         evaluation=EvaluationConfig(
             metrics=eval_["metrics"],

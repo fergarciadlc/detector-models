@@ -41,11 +41,18 @@ def _build_callbacks(
     callbacks = []
     cb_cfg = cfg.training.callbacks
 
+    if cfg.model.output.type == "multitask":
+        monitor_metric = "val_regression_output_mae"
+        monitor_mode = "min"
+    else:
+        monitor_metric = "val_auc_roc"
+        monitor_mode = "max"
+
     callbacks.append(
         tf.keras.callbacks.ModelCheckpoint(
             filepath=str(checkpoint_path / "best_model.keras"),
-            monitor="val_auc_roc",
-            mode="max",
+            monitor=monitor_metric,
+            mode=monitor_mode,
             save_best_only=True,
             verbose=1,
         )
@@ -127,17 +134,101 @@ def train(
         batch_size=cfg.training.batch_size,
         shuffle_buffer_multiplier=cfg.training.shuffle_buffer_multiplier,
         seed=cfg.training.seed,
+        output_type=cfg.model.output.type,
     )
 
     # Build model
     model = build_model(cfg.model, input_shape)
     optimizer = _get_optimizer(cfg.training.optimizer, cfg.training.learning_rate)
 
-    model.compile(
-        optimizer=optimizer,
-        loss=cfg.model.output.loss,
-        metrics=["accuracy", tf.keras.metrics.AUC(name="auc_roc")],
-    )
+    if cfg.model.output.type == "multitask":
+        lambda_weight = cfg.model.output.binary_head.get("weight", 0.5)
+        model.compile(
+            optimizer=optimizer,
+            loss={
+                "regression_output": cfg.model.output.regression["loss"],
+                "binary_output": cfg.model.output.binary_head["loss"],
+            },
+            loss_weights={
+                "regression_output": 1.0,
+                "binary_output": lambda_weight,
+            },
+            metrics={
+                "regression_output": ["mae"],
+                "binary_output": ["accuracy"],
+            },
+        )
+    else:
+        model.compile(
+            optimizer=optimizer,
+            loss=cfg.model.output.loss,
+            metrics=["accuracy", tf.keras.metrics.AUC(name="auc_roc")],
+        )
+
+    # ── Pretrained weights + backbone freezing ──
+    if cfg.training.pretrained_weights:
+        weights_path = Path(cfg.training.pretrained_weights)
+        logger.info("Loading pretrained weights from: %s", weights_path)
+
+        # Load the pretrained binary model to copy weights from
+        pretrained = tf.keras.models.load_model(weights_path, compile=False)
+
+        # Transfer weights for all layers that exist in both models
+        transferred = 0
+        for layer in model.layers:
+            try:
+                pretrained_layer = pretrained.get_layer(layer.name)
+                layer.set_weights(pretrained_layer.get_weights())
+                transferred += 1
+            except ValueError:
+                # Layer doesn't exist in pretrained model (e.g. new heads)
+                pass
+
+        logger.info(
+            "Transferred weights for %d/%d layers", transferred, len(model.layers)
+        )
+        del pretrained  # free memory
+
+    if cfg.training.freeze_backbone_epochs > 0:
+        # Freeze all backbone layers (conv_*, bn_*, maxpool_*, global_pool)
+        backbone_prefixes = ("conv_", "bn_", "maxpool_", "global_pool")
+        frozen_count = 0
+        for layer in model.layers:
+            if layer.name.startswith(backbone_prefixes):
+                layer.trainable = False
+                frozen_count += 1
+        logger.info("Froze %d backbone layers for %d epochs",
+                     frozen_count, cfg.training.freeze_backbone_epochs)
+
+        # Re-compile after changing trainability
+        # (reuse the same compile logic from above)
+        if cfg.model.output.type == "multitask":
+            lambda_weight = cfg.model.output.binary_head.get("weight", 0.5)
+            model.compile(
+                optimizer=_get_optimizer(
+                    cfg.training.optimizer, cfg.training.learning_rate
+                ),
+                loss={
+                    "regression_output": cfg.model.output.regression["loss"],
+                    "binary_output": cfg.model.output.binary_head["loss"],
+                },
+                loss_weights={
+                    "regression_output": 1.0,
+                    "binary_output": lambda_weight,
+                },
+                metrics={
+                    "regression_output": ["mae"],
+                    "binary_output": ["accuracy"],
+                },
+            )
+        else:
+            model.compile(
+                optimizer=_get_optimizer(
+                    cfg.training.optimizer, cfg.training.learning_rate
+                ),
+                loss=cfg.model.output.loss,
+                metrics=["accuracy", tf.keras.metrics.AUC(name="auc_roc")],
+            )
 
     model.summary(print_fn=logger.info)
 
@@ -158,13 +249,75 @@ def train(
         callbacks.append(_MLflowKerasCallback(mlf))
 
     # Train
-    history = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        epochs=cfg.training.epochs,
-        callbacks=callbacks,
-        verbose=1,
-    )
+    if cfg.training.freeze_backbone_epochs > 0:
+        # Phase 1: train with frozen backbone
+        logger.info("Phase 1: training heads only for %d epochs",
+                     cfg.training.freeze_backbone_epochs)
+        history_phase1 = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=cfg.training.freeze_backbone_epochs,
+            callbacks=callbacks,
+            verbose=1,
+        )
+
+        # Phase 2: unfreeze and fine-tune everything
+        for layer in model.layers:
+            layer.trainable = True
+
+        # Re-compile with lower learning rate for fine-tuning
+        fine_tune_lr = cfg.training.learning_rate * 0.1
+        logger.info("Phase 2: fine-tuning all layers (lr=%.6f) for %d epochs",
+                     fine_tune_lr,
+                     cfg.training.epochs - cfg.training.freeze_backbone_epochs)
+
+        if cfg.model.output.type == "multitask":
+            lambda_weight = cfg.model.output.binary_head.get("weight", 0.5)
+            model.compile(
+                optimizer=_get_optimizer(cfg.training.optimizer, fine_tune_lr),
+                loss={
+                    "regression_output": cfg.model.output.regression["loss"],
+                    "binary_output": cfg.model.output.binary_head["loss"],
+                },
+                loss_weights={
+                    "regression_output": 1.0,
+                    "binary_output": lambda_weight,
+                },
+                metrics={
+                    "regression_output": ["mae"],
+                    "binary_output": ["accuracy"],
+                },
+            )
+        else:
+            model.compile(
+                optimizer=_get_optimizer(cfg.training.optimizer, fine_tune_lr),
+                loss=cfg.model.output.loss,
+                metrics=["accuracy", tf.keras.metrics.AUC(name="auc_roc")],
+            )
+
+        history = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            initial_epoch=cfg.training.freeze_backbone_epochs,
+            epochs=cfg.training.epochs,
+            callbacks=callbacks,
+            verbose=1,
+        )
+
+        # Merge histories for logging
+        for key in history_phase1.history:
+            history.history[key] = (
+                history_phase1.history[key] + history.history[key]
+            )
+    else:
+        # Single-phase training (from scratch or no freezing)
+        history = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=cfg.training.epochs,
+            callbacks=callbacks,
+            verbose=1,
+        )
 
     # Save training artifacts
     best_model_path = checkpoint_path / "best_model.keras"
@@ -179,15 +332,29 @@ def train(
     mlf.save_run_meta(checkpoint_path)
     mlf.end_run()
 
-    result = {
-        "checkpoint_path": str(best_model_path),
-        "last_checkpoint_path": str(last_model_path),
-        "epochs_run": len(history.history.get("loss", [])),
-        "final_train_loss": history.history["loss"][-1],
-        "final_val_loss": history.history["val_loss"][-1],
-        "final_train_accuracy": history.history["accuracy"][-1],
-        "final_val_accuracy": history.history["val_accuracy"][-1],
-    }
+    hist = history.history
+    if cfg.model.output.type == "multitask":
+        result = {
+            "checkpoint_path": str(best_model_path),
+            "last_checkpoint_path": str(last_model_path),
+            "epochs_run": len(hist.get("loss", [])),
+            "final_train_loss": hist["loss"][-1],
+            "final_val_loss": hist["val_loss"][-1],
+            "final_train_mae": hist["regression_output_mae"][-1],
+            "final_val_mae": hist["val_regression_output_mae"][-1],
+            "final_train_bin_acc": hist["binary_output_accuracy"][-1],
+            "final_val_bin_acc": hist["val_binary_output_accuracy"][-1],
+        }
+    else:
+        result = {
+            "checkpoint_path": str(best_model_path),
+            "last_checkpoint_path": str(last_model_path),
+            "epochs_run": len(hist.get("loss", [])),
+            "final_train_loss": hist["loss"][-1],
+            "final_val_loss": hist["val_loss"][-1],
+            "final_train_accuracy": hist["accuracy"][-1],
+            "final_val_accuracy": hist["val_accuracy"][-1],
+        }
 
     return result
 
