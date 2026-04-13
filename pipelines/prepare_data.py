@@ -60,8 +60,8 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_experiment(args.config)
     ds = cfg.dataset
 
-    # CLI --limit overrides config limit
-    limit = args.limit if args.limit is not None else ds.limit
+    # CLI --limit overrides experiment config limit
+    limit = args.limit if args.limit is not None else cfg.limit
 
     logger.info("=" * 60)
     logger.info("STAGE 1: DATA PREPARATION")
