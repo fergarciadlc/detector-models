@@ -127,6 +127,16 @@ class MLflowLogger:
             )
             self._active = False
 
+    def log_tags(self, tags: dict[str, Any]) -> None:
+        """Set run-level tags. Shown in the Tags column of the MLflow run list."""
+        if not self._active:
+            return
+        try:
+            sanitized = {k: str(v)[:500] for k, v in tags.items()}
+            self._mlflow.set_tags(sanitized)
+        except Exception:
+            logger.warning("Failed to log tags to MLflow", exc_info=True)
+
     def log_params(self, params: dict[str, Any]) -> None:
         if not self._active:
             return
@@ -146,6 +156,117 @@ class MLflowLogger:
             logger.warning(
                 "Failed to log metrics to MLflow: %s",
                 list(metrics.keys()), exc_info=True,
+            )
+
+    def log_keras_model(
+        self,
+        model: Any,
+        artifact_path: str = "model",
+        registered_model_name: str | None = None,
+        signature: Any | None = None,
+        input_example: Any | None = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> None:
+        """Log a Keras model as an MLflow model artifact.
+
+        Uses mlflow.keras.log_model so the model is stored as a proper MLflow
+        model flavor (serveable, registerable) rather than a raw file.
+
+        Args:
+            model: Trained Keras model.
+            artifact_path: Subdirectory inside the run's artifact store.
+            registered_model_name: If set, registers the model in the Model Registry.
+            signature: MLflow ModelSignature describing model inputs and outputs.
+                       Use mlflow.models.infer_signature() to create one.
+            input_example: One or a few sample inputs (numpy array, dict, …).
+                           When provided and signature is None, MLflow infers the
+                           signature automatically.
+            description: Optional free-text description stored in the model's
+                         MLmodel metadata and, when a registered_model_name is
+                         given, also set on the resulting model version in the
+                         MLflow Model Registry.
+        """
+        if not self._active:
+            return
+        try:
+            import mlflow.keras
+
+            metadata: dict | None = None
+            if description or registered_model_name:
+                metadata = {}
+                if registered_model_name:
+                    metadata["model_name"] = registered_model_name
+                if description:
+                    metadata["description"] = description
+            model_info = mlflow.keras.log_model(
+                model,
+                artifact_path=artifact_path,
+                registered_model_name=registered_model_name,
+                signature=signature,
+                input_example=input_example,
+                metadata=metadata,
+            )
+            logger.info("Logged Keras model to MLflow (artifact_path=%s)", artifact_path)
+
+            if registered_model_name and model_info.registered_model_version:
+                version = str(model_info.registered_model_version)
+                try:
+                    client = self._mlflow.MlflowClient()
+                    if description:
+                        client.update_model_version(
+                            name=registered_model_name,
+                            version=version,
+                            description=description,
+                        )
+                    if tags:
+                        for key, value in tags.items():
+                            client.set_model_version_tag(
+                                name=registered_model_name,
+                                version=version,
+                                key=key,
+                                value=str(value),
+                            )
+                    logger.info(
+                        "Updated registry metadata for %s v%s",
+                        registered_model_name, version,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Could not update model version metadata in registry",
+                        exc_info=True,
+                    )
+        except Exception:
+            logger.warning("Failed to log Keras model to MLflow", exc_info=True)
+
+    def log_dataset_input(
+        self,
+        dataset: Any,
+        context: str = "training",
+    ) -> None:
+        """Log a dataset as an MLflow run input.
+
+        Datasets logged here appear in the dedicated "Inputs" tab of the run
+        in the MLflow UI, with schema, digest, profile, and source lineage.
+
+        Build the dataset object with e.g.:
+            mlflow.data.from_tensorflow(features=tf_ds, source=manifest_path)
+
+        Args:
+            dataset: An mlflow.data.Dataset instance
+                     (TensorFlowDataset, NumpyDataset, PandasDataset, …).
+            context: Label that identifies how the dataset is used,
+                     e.g. "training" or "validation".
+        """
+        if not self._active:
+            return
+        try:
+            self._mlflow.log_input(dataset, context=context)
+            logger.info("Logged dataset input to MLflow (context=%s)", context)
+        except Exception:
+            logger.warning(
+                "Failed to log dataset input to MLflow (context=%s)",
+                context, exc_info=True,
             )
 
     def log_artifact(self, path: str | Path, artifact_path: str | None = None) -> None:

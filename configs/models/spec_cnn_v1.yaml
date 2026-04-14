@@ -1,6 +1,7 @@
 model:
   name: spec_cnn_v1
   type: spectrogram_cnn
+  # description: "Optional: shown in the MLflow Model Registry as the version description"
 
   backbone:
     filters:  [16, 32, 64, 128, 256, 512]

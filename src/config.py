@@ -216,6 +216,8 @@ class ModelConfig:
     backbone: BackboneConfig
     head: HeadConfig
     output: OutputConfig
+    description: str | None = None
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 # ── Training ────────────────────────────────────────────────────
@@ -458,6 +460,8 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
         model=ModelConfig(
             name=model_raw["name"],
             type=model_raw["type"],
+            description=model_raw.get("description"),
+            tags=model_raw.get("tags", {}),
             backbone=BackboneConfig(
                 filters=model_raw["backbone"]["filters"],
                 kernels=model_raw["backbone"]["kernels"],

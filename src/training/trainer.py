@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import tensorflow as tf
 import yaml
 
@@ -222,9 +223,13 @@ def train(
     mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
     mlf.start_run(run_name=cfg.name)
     mlf.log_params(cfg.to_flat_dict())
+    mlf.log_params(_dataset_params(feature_manifest_path))
+    if cfg.tags:
+        mlf.log_tags(cfg.tags)
 
     if mlf.active:
         callbacks.append(_MLflowKerasCallback(mlf))
+        _log_mlflow_datasets(mlf, train_ds, val_ds, feature_manifest_path)
 
     # Train
     if cfg.training.freeze_backbone_epochs > 0:
@@ -285,6 +290,15 @@ def train(
 
     mlf.log_artifact(best_model_path)
     mlf.log_artifact(checkpoint_path / "model_summary.txt")
+    signature = _infer_model_signature(model, train_ds)
+    mlf.log_keras_model(
+        model,
+        artifact_path="model",
+        registered_model_name=cfg.model.name,
+        signature=signature,
+        description=cfg.model.description,
+        tags=cfg.model.tags if cfg.model.tags else None,
+    )
     mlf.save_run_meta(checkpoint_path)
     mlf.end_run()
 
@@ -310,6 +324,124 @@ def train(
         })
 
     return result
+
+
+def _infer_model_signature(model: tf.keras.Model, train_ds: tf.data.Dataset) -> Any:
+    """Infer an MLflow ModelSignature from one batch of the training dataset.
+
+    Primary path: takes a real sample batch, runs a forward pass, and calls
+    mlflow.models.infer_signature() so dtypes and output names are exact.
+
+    Fallback: if the forward pass fails (e.g. GPU OOM / cuBLAS not available),
+    builds the signature purely from model.input_shape / model.output_shape
+    metadata without executing any computation.
+
+    Returns None on any unexpected error so training is never blocked.
+    """
+    try:
+        from mlflow.models import infer_signature
+
+        batch = next(iter(train_ds.take(1)))
+        sample_x = batch[0] if isinstance(batch, tuple) else batch
+        sample_x_np = sample_x.numpy()
+        sample_preds = model.predict(sample_x_np, verbose=0)
+        return infer_signature(sample_x_np, sample_preds)
+    except Exception:
+        logger.warning(
+            "Forward-pass signature inference failed — falling back to shape-based",
+            exc_info=True,
+        )
+        return _signature_from_shapes(model)
+
+
+def _signature_from_shapes(model: tf.keras.Model) -> Any:
+    """Build an MLflow ModelSignature from model input/output shape metadata.
+
+    No forward pass is performed, so this is safe even when GPU memory is tight
+    or cuBLAS has not been initialised yet.
+    Returns None on failure.
+    """
+    try:
+        from mlflow.models import ModelSignature
+        from mlflow.types import Schema, TensorSpec
+
+        input_shapes = model.input_shape
+        if not isinstance(input_shapes, list):
+            input_shapes = [input_shapes]
+        input_names = model.input_names
+
+        output_shapes = model.output_shape
+        if not isinstance(output_shapes, list):
+            output_shapes = [output_shapes]
+        output_names = model.output_names
+
+        inputs_schema = Schema([
+            TensorSpec(
+                np.dtype("float32"),
+                tuple(d if d is not None else -1 for d in s),
+                n if len(input_names) > 1 else None,
+            )
+            for s, n in zip(input_shapes, input_names)
+        ])
+        outputs_schema = Schema([
+            TensorSpec(
+                np.dtype("float32"),
+                tuple(d if d is not None else -1 for d in s),
+                n if len(output_names) > 1 else None,
+            )
+            for s, n in zip(output_shapes, output_names)
+        ])
+        return ModelSignature(inputs=inputs_schema, outputs=outputs_schema)
+    except Exception:
+        logger.warning("Could not build shape-based MLflow model signature", exc_info=True)
+        return None
+
+
+def _log_mlflow_datasets(
+    mlf: MLflowLogger,
+    train_ds: tf.data.Dataset,
+    val_ds: tf.data.Dataset,
+    feature_manifest_path: Path,
+) -> None:
+    """Log training and validation datasets to the active MLflow run."""
+    try:
+        from mlflow.data.tensorflow_dataset import from_tensorflow
+
+        with open(feature_manifest_path) as f:
+            import json
+            manifest = json.load(f)
+        dataset_name = manifest.get("dataset", "dataset")
+        source = str(feature_manifest_path)
+
+        mlf.log_dataset_input(
+            from_tensorflow(features=train_ds, source=source, name=f"{dataset_name}_train"),
+            context="training",
+        )
+        mlf.log_dataset_input(
+            from_tensorflow(features=val_ds, source=source, name=f"{dataset_name}_val"),
+            context="validation",
+        )
+    except Exception:
+        logger.warning("Could not log dataset inputs to MLflow", exc_info=True)
+
+
+def _dataset_params(feature_manifest_path: Path) -> dict[str, Any]:
+    """Extract dataset metadata from a feature manifest for MLflow param logging."""
+    try:
+        with open(feature_manifest_path) as f:
+            manifest = json.load(f)
+        by_split = manifest.get("summary", {}).get("by_split", {})
+        return {
+            "dataset.name": manifest.get("dataset", ""),
+            "dataset.feature_config": manifest.get("feature_config", ""),
+            "dataset.manifest_path": str(feature_manifest_path),
+            "dataset.num_train": by_split.get("train", 0),
+            "dataset.num_val": by_split.get("val", 0),
+            "dataset.num_test": by_split.get("test", 0),
+        }
+    except Exception:
+        logger.warning("Could not read dataset params from manifest", exc_info=True)
+        return {}
 
 
 def _save_training_history(history, checkpoint_path: Path) -> None:

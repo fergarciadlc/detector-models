@@ -1,6 +1,16 @@
 model:
   name: spec_cnn_v1_multitask
   type: spectrogram_cnn
+  description: "Spectrogram CNN v1 — multitask head: AI-proportion regression + binary AI detection"
+  # optional tags:
+  tags:
+    task: multitask
+    architecture: spectrogram_cnn
+    framework: keras
+    dataset: aria
+    features: stft_db_44k
+    model: spec_cnn_v1_multitask
+    strategy: from_scratch
 
   backbone:
     filters:  [16, 32, 64, 128, 256, 512]
