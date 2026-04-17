@@ -28,7 +28,7 @@ def _audio_file_to_dict(af: AudioFile) -> dict[str, Any]:
         "label_name": af.label_name,
     }
     if af.ai_ratio is not None:
-        d["ai_ratio"] = af.ai_ratio
+        d["ai_energy_ratio"] = af.ai_ratio
     return d
 
 
@@ -37,7 +37,7 @@ def _dict_to_audio_file(d: dict[str, Any]) -> AudioFile:
         path=Path(d["path"]),
         label=d["label"],
         label_name=d["label_name"],
-        ai_ratio=d.get("ai_ratio"),
+        ai_ratio=d.get("ai_energy_ratio"),
     )
 
 

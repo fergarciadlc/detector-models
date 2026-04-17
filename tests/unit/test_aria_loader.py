@@ -28,24 +28,24 @@ def aria_dir(tmp_path):
     rows = [
         # track_a — 2 mixes in train
         {
-            "track_id": "track_a", "split": "train", "ai_ratio": 0.0,
+            "track_id": "track_a", "split": "train", "ai_energy_ratio": 0.0,
             "mix_path": "track_a/mixes/encodec_3/U0/mix.mp3",
             "num_stems": 4, "genre": "rock",
         },
         {
-            "track_id": "track_a", "split": "train", "ai_ratio": 0.25,
+            "track_id": "track_a", "split": "train", "ai_energy_ratio": 0.25,
             "mix_path": "track_a/mixes/encodec_3/U1/mix.mp3",
             "num_stems": 4, "genre": "rock",
         },
         # track_b — 1 mix in val
         {
-            "track_id": "track_b", "split": "val", "ai_ratio": 0.5,
+            "track_id": "track_b", "split": "val", "ai_energy_ratio": 0.5,
             "mix_path": "track_b/mixes/encodec_3/U0/mix.mp3",
             "num_stems": 4, "genre": "pop",
         },
         # track_c — 1 mix in test
         {
-            "track_id": "track_c", "split": "test", "ai_ratio": 1.0,
+            "track_id": "track_c", "split": "test", "ai_energy_ratio": 1.0,
             "mix_path": "track_c/mixes/encodec_3/U0/mix.mp3",
             "num_stems": 4, "genre": "jazz",
         },

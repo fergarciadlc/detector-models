@@ -149,7 +149,7 @@ def extract_file(
         "duration_sec": round(duration_sec, 2),
     }
     if audio_file.ai_ratio is not None:
-        entry["ai_ratio"] = audio_file.ai_ratio
+        entry["ai_energy_ratio"] = audio_file.ai_ratio
     return entry
 
 

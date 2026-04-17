@@ -63,7 +63,7 @@ def build_dataset(
     along the time axis (axis 0).
 
     For `output_type == "multitask"` or `"regression"`, the continuous
-    `ai_ratio` field from the feature manifest is used as the label source
+    `ai_energy_ratio` field from the feature manifest is used as the label source
     (falls back to casting `label` to float for binary-labelled datasets).
 
     Args:
@@ -82,10 +82,10 @@ def build_dataset(
     paths = [e["feature_path"] for e in entries]
     n_frames_list = [e["n_frames"] for e in entries]
 
-    # For continuous-output types use ai_ratio when present; fall back to label.
+    # For continuous-output types use ai_energy_ratio when present; fall back to label.
     if output_type in ("multitask", "regression"):
         labels = [
-            float(e["ai_ratio"]) if e.get("ai_ratio") is not None else float(e["label"])
+            float(e["ai_energy_ratio"]) if e.get("ai_energy_ratio") is not None else float(e["label"])
             for e in entries
         ]
     else:
