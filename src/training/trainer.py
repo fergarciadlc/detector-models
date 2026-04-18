@@ -57,6 +57,12 @@ def _compile_model(
                 "binary_output": ["accuracy"],
             },
         )
+    elif cfg.model.output.type == "regression":
+        model.compile(
+            optimizer=optimizer,
+            loss=cfg.model.output.regression["loss"],
+            metrics=["mae"],
+        )
     else:
         model.compile(
             optimizer=optimizer,
@@ -73,6 +79,9 @@ def _build_callbacks(
 
     if cfg.model.output.type == "multitask":
         monitor_metric = "val_regression_output_mae"
+        monitor_mode = "min"
+    elif cfg.model.output.type == "regression":
+        monitor_metric = "val_mae"
         monitor_mode = "min"
     else:
         monitor_metric = "val_auc_roc"
@@ -316,6 +325,11 @@ def train(
             "final_val_mae": hist["val_regression_output_mae"][-1],
             "final_train_bin_acc": hist["binary_output_accuracy"][-1],
             "final_val_bin_acc": hist["val_binary_output_accuracy"][-1],
+        })
+    elif cfg.model.output.type == "regression":
+        result.update({
+            "final_train_mae": hist["mae"][-1],
+            "final_val_mae": hist["val_mae"][-1],
         })
     else:
         result.update({

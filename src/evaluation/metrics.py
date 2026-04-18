@@ -49,7 +49,12 @@ _BINARY_METRICS = {"accuracy", "f1", "auc_roc", "eer"}
 _REGRESSION_METRICS = {"mae", "rmse", "r2", "pearson", "spearman"}
 
 _BINARY_PLOTS = {"confusion_matrix", "roc_curve", "det_curve"}
-_REGRESSION_PLOTS = {"prediction_scatter", "error_by_alpha_bucket"}
+_REGRESSION_PLOTS = {
+    "prediction_scatter",
+    "error_by_alpha_bucket",
+    "residual_histogram",
+    "abs_error_cdf",
+}
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -291,6 +296,38 @@ def _plot_regression(name: str, result: EvalResult, output_dir: Path) -> Path | 
                     f"n={count}",
                     ha="center", va="bottom", fontsize=7,
                 )
+
+    elif name == "residual_histogram":
+        residuals = y_pred - y_true
+        ax.hist(residuals, bins=40, color="steelblue", alpha=0.8, edgecolor="white")
+        ax.axvline(0.0, color="k", linestyle="--", alpha=0.5, label="Zero error")
+        mean_res = float(np.mean(residuals))
+        std_res = float(np.std(residuals))
+        ax.axvline(mean_res, color="crimson", linestyle="-", alpha=0.8,
+                   label=f"Mean = {mean_res:+.4f}")
+        ax.set_xlabel("Residual (predicted − true)")
+        ax.set_ylabel("Count")
+        ax.set_title("Residual Distribution")
+        ax.text(0.02, 0.95, f"std = {std_res:.4f}",
+                transform=ax.transAxes, fontsize=10, va="top")
+        ax.legend()
+
+    elif name == "abs_error_cdf":
+        abs_err = np.abs(y_pred - y_true)
+        sorted_err = np.sort(abs_err)
+        cdf = np.arange(1, len(sorted_err) + 1) / len(sorted_err)
+        ax.plot(sorted_err, cdf, color="steelblue", linewidth=2)
+        for q in (0.5, 0.9, 0.95):
+            idx = int(np.ceil(q * len(sorted_err))) - 1
+            thresh = float(sorted_err[idx])
+            ax.axhline(q, color="gray", linestyle=":", alpha=0.5)
+            ax.text(thresh, q, f"  p{int(q*100)} = {thresh:.4f}",
+                    va="center", fontsize=9)
+        ax.set_xlabel("|predicted − true|")
+        ax.set_ylabel("Cumulative fraction of files")
+        ax.set_ylim(0.0, 1.02)
+        ax.set_title("CDF of Absolute Error")
+        ax.grid(alpha=0.3)
 
     fig.tight_layout()
     path = output_dir / f"{name}.png"

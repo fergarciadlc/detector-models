@@ -92,6 +92,14 @@ def build_model(model_cfg: ModelConfig, input_shape: tuple[int, int, int]) -> Mo
         output = layers.Dense(out.num_classes, activation=out.activation, name="output")(Y)
         model = Model(X, output, name=model_cfg.name)
 
+    elif out.type == "regression":
+        output = layers.Dense(
+            1,
+            activation=out.regression["activation"],
+            name="regression_output",
+        )(Y)
+        model = Model(X, output, name=model_cfg.name)
+
     elif out.type == "multitask":
         # Regression head: predict alpha between 0 and 1
         reg_out = layers.Dense(

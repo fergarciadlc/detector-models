@@ -6,10 +6,12 @@ from __future__ import annotations
 from src.evaluation.evaluators._base import BaseEvaluator
 from src.evaluation.evaluators.binary import BinaryEvaluator
 from src.evaluation.evaluators.multitask import MultitaskEvaluator
+from src.evaluation.evaluators.regression import RegressionEvaluator
 
 _REGISTRY: dict[str, type[BaseEvaluator]] = {
     "binary": BinaryEvaluator,
     "multitask": MultitaskEvaluator,
+    "regression": RegressionEvaluator,
 }
 
 

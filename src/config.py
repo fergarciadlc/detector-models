@@ -207,6 +207,11 @@ class OutputConfig:
                     "Output type 'multitask' requires both 'regression' "
                     "and 'binary_head' sub-configs"
                 )
+        if self.type == "regression" and self.regression is None:
+            raise ValueError(
+                "Output type 'regression' requires a 'regression' sub-config "
+                "with 'activation' and 'loss'"
+            )
 
 
 @dataclass
