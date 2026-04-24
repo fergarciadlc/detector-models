@@ -1,0 +1,44 @@
+experiment:
+  name: regression_relu
+  description: "Regression CNN on ARIA, trained from scratch — ReLU output + MSE"
+  mlflow_experiment: aria-regression-baselines
+  tags:
+    task: regression_relu_energy_single_output
+    strategy: from_scratch
+  # limit: null
+
+dataset: configs/datasets/aria.yaml
+features: configs/features/stft_db_44k.yaml
+model: configs/models/spec_cnn_regression_v3.yaml
+
+training:
+  epochs: 100
+  batch_size: 50
+  learning_rate: 0.001
+  optimizer: adam
+  seed: 123
+
+  crop:
+    window_sec: 1.0
+    strategy: random
+    samples_per_file: 5
+
+  shuffle_buffer_multiplier: 2
+
+  callbacks:
+    early_stopping:
+      monitor: val_mae
+      patience: 15
+    reduce_lr:
+      monitor: val_mae
+      factor: 0.5
+      patience: 5
+
+  augmentation:
+    enabled: false
+
+evaluation:
+  metrics: [mae, rmse, r2, pearson, spearman]
+  plots: [prediction_scatter, error_by_alpha_bucket, residual_histogram, abs_error_cdf]
+  threshold_sweep:
+    enabled: false
