@@ -255,11 +255,11 @@ def _plot_regression(name: str, result: EvalResult, output_dir: Path) -> Path | 
         ax.scatter(y_true, y_pred, alpha=0.3, s=10, color="steelblue")
         lims = [0.0, 1.0]
         ax.plot(lims, lims, "k--", alpha=0.5, label="Perfect prediction")
-        ax.set_xlabel("True ai_ratio")
-        ax.set_ylabel("Predicted ai_ratio")
+        ax.set_xlabel("True ai_energy_ratio")
+        ax.set_ylabel("Predicted ai_energy_ratio")
         ax.set_xlim(lims)
         ax.set_ylim(lims)
-        ax.set_title("Prediction Scatter (ai_ratio)")
+        ax.set_title("Prediction Scatter (ai_energy_ratio)")
         mae = float(mean_absolute_error(y_true, y_pred))
         ax.text(0.05, 0.92, f"MAE = {mae:.4f}", transform=ax.transAxes, fontsize=10)
         ax.legend()
@@ -283,9 +283,9 @@ def _plot_regression(name: str, result: EvalResult, output_dir: Path) -> Path | 
         bars = ax.bar(x, bucket_mae, color="steelblue", alpha=0.8)
         ax.set_xticks(x)
         ax.set_xticklabels(bucket_labels, rotation=45, ha="right")
-        ax.set_xlabel("True ai_ratio bucket")
+        ax.set_xlabel("True ai_energy_ratio bucket")
         ax.set_ylabel("MAE")
-        ax.set_title("MAE by ai_ratio Bucket")
+        ax.set_title("MAE by ai_energy_ratio Bucket")
 
         # Annotate bar tops with sample counts
         for bar, count in zip(bars, bucket_counts):
