@@ -18,7 +18,7 @@ features:
     std: 3.0
 
   # null = full file. Set to a number (seconds)
-  max_duration_sec: 15
+  # max_duration_sec: 60
 
   storage: full
   output_format: npy
