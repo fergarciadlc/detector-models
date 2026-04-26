@@ -155,7 +155,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Compute metrics and generate plots
     metrics = compute_metrics(result, cfg.evaluation.metrics)
-    plot_paths = generate_plots(result, cfg.evaluation.plots, output_dir)
+    plot_paths = generate_plots(result, cfg.evaluation.plots, output_dir, run_name=cfg.name)
 
     # Threshold sweep (binary models only)
     sweep_result = None

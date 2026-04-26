@@ -54,6 +54,7 @@ _REGRESSION_PLOTS = {
     "error_by_alpha_bucket",
     "residual_histogram",
     "abs_error_cdf",
+    "median_pred_by_alpha_bucket",
 }
 
 
@@ -105,6 +106,7 @@ def generate_plots(
     result: EvalResult,
     plot_names: list[str],
     output_dir: Path,
+    run_name: str | None = None,
 ) -> list[Path]:
     """Generate evaluation plots and save as PNG files."""
     output_dir = Path(output_dir)
@@ -113,7 +115,7 @@ def generate_plots(
 
     for name in plot_names:
         try:
-            path = _generate_one_plot(name, result, output_dir)
+            path = _generate_one_plot(name, result, output_dir, run_name)
             if path:
                 saved.append(path)
         except Exception:
@@ -194,25 +196,25 @@ def _compute_eer(y_true: np.ndarray, y_pred_prob: np.ndarray) -> float:
 
 
 def _generate_one_plot(
-    name: str, result: EvalResult, output_dir: Path
+    name: str, result: EvalResult, output_dir: Path, run_name: str | None = None
 ) -> Path | None:
     if name in _BINARY_PLOTS:
         if not result.has_binary:
             logger.warning("Plot '%s' requires binary output, skipping", name)
             return None
-        return _plot_binary(name, result, output_dir)
+        return _plot_binary(name, result, output_dir, run_name)
 
     if name in _REGRESSION_PLOTS:
         if not result.has_regression:
             logger.warning("Plot '%s' requires regression output, skipping", name)
             return None
-        return _plot_regression(name, result, output_dir)
+        return _plot_regression(name, result, output_dir, run_name)
 
     logger.warning("Unknown plot '%s', skipping", name)
     return None
 
 
-def _plot_binary(name: str, result: EvalResult, output_dir: Path) -> Path | None:
+def _plot_binary(name: str, result: EvalResult, output_dir: Path, run_name: str | None = None) -> Path | None:
     y_true = result.y_true_binary
     y_prob = result.y_pred_binary_prob
     y_pred = result.y_pred_binary
@@ -237,6 +239,8 @@ def _plot_binary(name: str, result: EvalResult, output_dir: Path) -> Path | None
         DetCurveDisplay.from_predictions(y_true, y_prob, name="Detector", ax=ax)
         ax.set_title("DET Curve")
 
+    if run_name:
+        fig.suptitle(run_name, fontsize=10, y=0.995)
     fig.tight_layout()
     path = output_dir / f"{name}.png"
     fig.savefig(path, dpi=150)
@@ -245,7 +249,7 @@ def _plot_binary(name: str, result: EvalResult, output_dir: Path) -> Path | None
     return path
 
 
-def _plot_regression(name: str, result: EvalResult, output_dir: Path) -> Path | None:
+def _plot_regression(name: str, result: EvalResult, output_dir: Path, run_name: str | None = None) -> Path | None:
     y_true = result.y_true_alpha
     y_pred = result.y_pred_alpha
 
@@ -312,6 +316,39 @@ def _plot_regression(name: str, result: EvalResult, output_dir: Path) -> Path | 
                 transform=ax.transAxes, fontsize=10, va="top")
         ax.legend()
 
+    elif name == "median_pred_by_alpha_bucket":
+        bins = np.arange(0.0, 1.1, 0.1)
+        idx = np.clip(np.digitize(y_true, bins) - 1, 0, len(bins) - 2)
+        labels = [f"{lo:.1f}–{hi:.1f}" for lo, hi in zip(bins[:-1], bins[1:])]
+        medians, q25, q75 = [], [], []
+        for b in range(len(bins) - 1):
+            mask = idx == b
+            if mask.any():
+                medians.append(float(np.median(y_pred[mask])))
+                q25.append(float(np.quantile(y_pred[mask], 0.25)))
+                q75.append(float(np.quantile(y_pred[mask], 0.75)))
+            else:
+                medians.append(np.nan)
+                q25.append(np.nan)
+                q75.append(np.nan)
+        medians = np.array(medians)
+        yerr = np.array([medians - np.array(q25), np.array(q75) - medians])
+        x = np.arange(len(labels))
+        ax.errorbar(
+            x, medians, yerr=yerr,
+            fmt="o-", capsize=5, markersize=7, linewidth=2, capthick=2,
+            color="steelblue", alpha=0.9,
+        )
+        ax.plot(x, (bins[:-1] + bins[1:]) / 2, "k--", alpha=0.4, label="Perfect prediction")
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.set_xlabel("True ai_energy_ratio bucket")
+        ax.set_ylabel("Median predicted ai_energy_ratio")
+        ax.set_title("Median prediction by ai_energy_ratio bucket\n(error bars: IQR Q25–Q75)")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.3)
+        ax.legend()
+
     elif name == "abs_error_cdf":
         abs_err = np.abs(y_pred - y_true)
         sorted_err = np.sort(abs_err)
@@ -329,6 +366,8 @@ def _plot_regression(name: str, result: EvalResult, output_dir: Path) -> Path | 
         ax.set_title("CDF of Absolute Error")
         ax.grid(alpha=0.3)
 
+    if run_name:
+        fig.suptitle(run_name, fontsize=10, y=0.995)
     fig.tight_layout()
     path = output_dir / f"{name}.png"
     fig.savefig(path, dpi=150)

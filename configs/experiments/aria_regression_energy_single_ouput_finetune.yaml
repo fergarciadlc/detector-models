@@ -42,6 +42,6 @@ training:
 
 evaluation:
   metrics: [mae, rmse, r2, pearson, spearman]
-  plots: [prediction_scatter, error_by_alpha_bucket, residual_histogram, abs_error_cdf]
+  plots: [prediction_scatter, error_by_alpha_bucket, residual_histogram, abs_error_cdf, median_pred_by_alpha_bucket]
   threshold_sweep:
     enabled: false

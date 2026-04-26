@@ -99,6 +99,9 @@ train: ## Stage 3: Train
 evaluate: ## Stage 4: Evaluate
 	$(DOCKER_RUN) python -m pipelines.evaluate --config $(EXP)
 
+.PHONY: train-eval
+train-eval: train evaluate ## Stage 3+4: Train then evaluate
+
 .PHONY: run-all
 run-all: prepare features train evaluate ## Full pipeline
 
