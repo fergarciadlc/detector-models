@@ -19,7 +19,10 @@ import yaml
 from src.config import ExperimentConfig
 from src.mlflow_logger import MLflowLogger, resolve_mlflow_experiment_name
 from src.models.cnn import build_model
-from src.training.data_loader import build_train_val_datasets
+from src.training.data_loader import (
+    build_train_val_datasets,
+    build_windowed_train_val_datasets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,16 +168,45 @@ def train(
     logger.info("Input shape: %s", input_shape)
     logger.info("Crop frames: %d (%.3fs)", crop_frames, cfg.training.crop.window_sec)
 
-    # Build datasets
-    train_ds, val_ds = build_train_val_datasets(
-        feature_manifest_path=feature_manifest_path,
-        crop_frames=crop_frames,
-        samples_per_file=cfg.training.crop.samples_per_file,
-        batch_size=cfg.training.batch_size,
-        shuffle_buffer_multiplier=cfg.training.shuffle_buffer_multiplier,
-        seed=cfg.training.seed,
-        output_type=cfg.model.output.type,
-    )
+    # Build datasets — `aligned` mode joins canonical 5s windows with the
+    # saved spectrograms (windowed regression on ARIA-w5s); `random` /
+    # `strided` use the legacy random-crop pipeline.
+    if cfg.training.crop.strategy in ("aligned", "aligned-random"):
+        if cfg.model.output.type != "regression":
+            raise ValueError(
+                f"crop.strategy={cfg.training.crop.strategy!r} is only "
+                "supported with model.output.type='regression' (got "
+                f"{cfg.model.output.type!r})."
+            )
+        if not cfg.dataset.split.predefined_path:
+            raise ValueError(
+                f"crop.strategy={cfg.training.crop.strategy!r} requires the "
+                "dataset to have a `split.predefined_path` pointing to a "
+                "window-level JSONL."
+            )
+        train_ds, val_ds, _info = build_windowed_train_val_datasets(
+            feature_manifest_path=feature_manifest_path,
+            windows_jsonl_path=cfg.dataset.split.predefined_path,
+            dataset_base_path=cfg.dataset.path,
+            crop_frames=crop_frames,
+            sample_rate=cfg.features.audio.sample_rate,
+            hop_length=cfg.features.stft.hop_length,
+            batch_size=cfg.training.batch_size,
+            shuffle_buffer_multiplier=cfg.training.shuffle_buffer_multiplier,
+            seed=cfg.training.seed,
+            strategy=cfg.training.crop.strategy,
+            samples_per_file=cfg.training.crop.samples_per_file,
+        )
+    else:
+        train_ds, val_ds = build_train_val_datasets(
+            feature_manifest_path=feature_manifest_path,
+            crop_frames=crop_frames,
+            samples_per_file=cfg.training.crop.samples_per_file,
+            batch_size=cfg.training.batch_size,
+            shuffle_buffer_multiplier=cfg.training.shuffle_buffer_multiplier,
+            seed=cfg.training.seed,
+            output_type=cfg.model.output.type,
+        )
 
     # Build model
     model = build_model(cfg.model, input_shape)
@@ -232,13 +264,13 @@ def train(
     mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
     mlf.start_run(run_name=cfg.name)
     mlf.log_params(cfg.to_flat_dict())
-    mlf.log_params(_dataset_params(feature_manifest_path))
+    # mlf.log_params(_dataset_params(feature_manifest_path))
     if cfg.tags:
         mlf.log_tags(cfg.tags)
 
     if mlf.active:
         callbacks.append(_MLflowKerasCallback(mlf))
-        _log_mlflow_datasets(mlf, train_ds, val_ds, feature_manifest_path)
+        # _log_mlflow_datasets(mlf, train_ds, val_ds, feature_manifest_path)
 
     # Train
     if cfg.training.freeze_backbone_epochs > 0:
@@ -411,51 +443,51 @@ def _signature_from_shapes(model: tf.keras.Model) -> Any:
         return None
 
 
-def _log_mlflow_datasets(
-    mlf: MLflowLogger,
-    train_ds: tf.data.Dataset,
-    val_ds: tf.data.Dataset,
-    feature_manifest_path: Path,
-) -> None:
-    """Log training and validation datasets to the active MLflow run."""
-    try:
-        from mlflow.data.tensorflow_dataset import from_tensorflow
+# def _log_mlflow_datasets(
+#     mlf: MLflowLogger,
+#     train_ds: tf.data.Dataset,
+#     val_ds: tf.data.Dataset,
+#     feature_manifest_path: Path,
+# ) -> None:
+#     """Log training and validation datasets to the active MLflow run."""
+#     try:
+#         from mlflow.data.tensorflow_dataset import from_tensorflow
 
-        with open(feature_manifest_path) as f:
-            import json
-            manifest = json.load(f)
-        dataset_name = manifest.get("dataset", "dataset")
-        source = str(feature_manifest_path)
+#         with open(feature_manifest_path) as f:
+#             import json
+#             manifest = json.load(f)
+#         dataset_name = manifest.get("dataset", "dataset")
+#         source = str(feature_manifest_path)
 
-        mlf.log_dataset_input(
-            from_tensorflow(features=train_ds, source=source, name=f"{dataset_name}_train"),
-            context="training",
-        )
-        mlf.log_dataset_input(
-            from_tensorflow(features=val_ds, source=source, name=f"{dataset_name}_val"),
-            context="validation",
-        )
-    except Exception:
-        logger.warning("Could not log dataset inputs to MLflow", exc_info=True)
+#         mlf.log_dataset_input(
+#             from_tensorflow(features=train_ds, source=source, name=f"{dataset_name}_train"),
+#             context="training",
+#         )
+#         mlf.log_dataset_input(
+#             from_tensorflow(features=val_ds, source=source, name=f"{dataset_name}_val"),
+#             context="validation",
+#         )
+#     except Exception:
+#         logger.warning("Could not log dataset inputs to MLflow", exc_info=True)
 
 
-def _dataset_params(feature_manifest_path: Path) -> dict[str, Any]:
-    """Extract dataset metadata from a feature manifest for MLflow param logging."""
-    try:
-        with open(feature_manifest_path) as f:
-            manifest = json.load(f)
-        by_split = manifest.get("summary", {}).get("by_split", {})
-        return {
-            "dataset.name": manifest.get("dataset", ""),
-            "dataset.feature_config": manifest.get("feature_config", ""),
-            "dataset.manifest_path": str(feature_manifest_path),
-            "dataset.num_train": by_split.get("train", 0),
-            "dataset.num_val": by_split.get("val", 0),
-            "dataset.num_test": by_split.get("test", 0),
-        }
-    except Exception:
-        logger.warning("Could not read dataset params from manifest", exc_info=True)
-        return {}
+# def _dataset_params(feature_manifest_path: Path) -> dict[str, Any]:
+#     """Extract dataset metadata from a feature manifest for MLflow param logging."""
+#     try:
+#         with open(feature_manifest_path) as f:
+#             manifest = json.load(f)
+#         by_split = manifest.get("summary", {}).get("by_split", {})
+#         return {
+#             "dataset.name": manifest.get("dataset", ""),
+#             "dataset.feature_config": manifest.get("feature_config", ""),
+#             "dataset.manifest_path": str(feature_manifest_path),
+#             "dataset.num_train": by_split.get("train", 0),
+#             "dataset.num_val": by_split.get("val", 0),
+#             "dataset.num_test": by_split.get("test", 0),
+#         }
+#     except Exception:
+#         logger.warning("Could not read dataset params from manifest", exc_info=True)
+#         return {}
 
 
 def _save_training_history(history, checkpoint_path: Path) -> None:

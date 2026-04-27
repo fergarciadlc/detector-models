@@ -129,7 +129,7 @@ def extract_file(
     ):
         os.environ.setdefault(k, "1")
 
-    y, duration_sec = load_audio(
+    y, duration_sec, start_offset_sec = load_audio(
         audio_file.path, features_cfg.audio, features_cfg.max_duration_sec
     )
     S = compute_spectrogram(y, features_cfg)
@@ -147,6 +147,7 @@ def extract_file(
         "n_frames": S.shape[0],
         "n_freq_bins": S.shape[1],
         "duration_sec": round(duration_sec, 2),
+        "start_offset_sec": round(start_offset_sec, 4),
     }
     if audio_file.ai_ratio is not None:
         entry["ai_energy_ratio"] = audio_file.ai_ratio

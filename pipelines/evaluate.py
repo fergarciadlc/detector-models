@@ -23,6 +23,7 @@ import tensorflow as tf
 
 from src.config import load_experiment
 from src.evaluation.evaluators import create_evaluator
+from src.evaluation.evaluators.regression_windowed import WindowedRegressionEvaluator
 from src.evaluation.metrics import compute_metrics, generate_plots, threshold_sweep
 from src.mlflow_logger import MLflowLogger, resolve_mlflow_experiment_name
 from src.training.data_loader import load_feature_manifest
@@ -144,7 +145,20 @@ def main(argv: list[str] | None = None) -> None:
     threshold = cfg.model.output.threshold or 0.5
     logger.info("Crop frames: %d, threshold: %.2f", crop_frames, threshold)
 
-    evaluator = create_evaluator(cfg.model.output.type)
+    if cfg.training.crop.strategy == "aligned":
+        if cfg.model.output.type != "regression":
+            raise ValueError(
+                "crop.strategy='aligned' eval requires "
+                "model.output.type='regression'."
+            )
+        evaluator = WindowedRegressionEvaluator(
+            windows_jsonl_path=cfg.dataset.split.predefined_path,
+            dataset_base_path=cfg.dataset.path,
+            sample_rate=cfg.features.audio.sample_rate,
+            hop_length=cfg.features.stft.hop_length,
+        )
+    else:
+        evaluator = create_evaluator(cfg.model.output.type)
     result = evaluator.run(
         model=model,
         entries=test_entries,
