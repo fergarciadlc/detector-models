@@ -21,10 +21,13 @@ from pathlib import Path
 
 import tensorflow as tf
 
+import numpy as np
+
 from src.config import load_experiment
 from src.evaluation.evaluators import create_evaluator
 from src.evaluation.evaluators.regression_windowed import WindowedRegressionEvaluator
 from src.evaluation.metrics import compute_metrics, generate_plots, threshold_sweep
+from src.evaluation.result import EvalResult
 from src.mlflow_logger import MLflowLogger, resolve_mlflow_experiment_name
 from src.training.data_loader import load_feature_manifest
 
@@ -145,10 +148,11 @@ def main(argv: list[str] | None = None) -> None:
     threshold = cfg.model.output.threshold or 0.5
     logger.info("Crop frames: %d, threshold: %.2f", crop_frames, threshold)
 
-    if cfg.training.crop.strategy == "aligned":
+    is_windowed = cfg.training.crop.strategy in ("aligned", "aligned-random")
+    if is_windowed:
         if cfg.model.output.type != "regression":
             raise ValueError(
-                "crop.strategy='aligned' eval requires "
+                f"crop.strategy={cfg.training.crop.strategy!r} eval requires "
                 "model.output.type='regression'."
             )
         evaluator = WindowedRegressionEvaluator(
@@ -167,9 +171,120 @@ def main(argv: list[str] | None = None) -> None:
         batch_size=cfg.training.batch_size,
     )
 
-    # Compute metrics and generate plots
+    # MLflow — resume training run
+    artifact_dir = Path("data/artifacts") / cfg.name
+    mlflow_experiment_name = resolve_mlflow_experiment_name(cfg.mlflow_experiment_name)
+    mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
+    run_meta = MLflowLogger.load_run_meta(artifact_dir)
+    if run_meta:
+        mlf.resume_run(run_meta["run_id"])
+    else:
+        logger.warning("No training run found — creating a standalone eval run")
+        mlf.start_run(run_name=f"{cfg.name}-eval")
+
+    if is_windowed:
+        # Per-window report (the native output of WindowedRegressionEvaluator).
+        windows_dir = output_dir / "windows"
+        _emit_report(
+            result=result,
+            cfg=cfg,
+            model_path=model_path,
+            test_entries=test_entries,
+            threshold=threshold,
+            output_dir=windows_dir,
+            mlflow_logger=mlf,
+            mlflow_metric_prefix="eval_window_",
+            mlflow_artifact_path="eval/windows",
+        )
+        # Track-level rollup: one (mean_true, mean_pred) per mix.
+        track_result = _aggregate_to_track_level(result)
+        tracks_dir = output_dir / "tracks"
+        _emit_report(
+            result=track_result,
+            cfg=cfg,
+            model_path=model_path,
+            test_entries=test_entries,
+            threshold=threshold,
+            output_dir=tracks_dir,
+            mlflow_logger=mlf,
+            mlflow_metric_prefix="eval_track_",
+            mlflow_artifact_path="eval/tracks",
+        )
+    else:
+        # Legacy non-windowed path: single flat report under eval/.
+        _emit_report(
+            result=result,
+            cfg=cfg,
+            model_path=model_path,
+            test_entries=test_entries,
+            threshold=threshold,
+            output_dir=output_dir,
+            mlflow_logger=mlf,
+            mlflow_metric_prefix="eval_",
+            mlflow_artifact_path="eval",
+        )
+
+    mlf.end_run()
+    logger.info("Done.")
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _aggregate_to_track_level(result: EvalResult) -> EvalResult:
+    """Build a track-level EvalResult from a windowed one.
+
+    For each per-mix `file_score` in the source result (which carries a
+    `windows: [...]` list with per-window true / predicted alphas), compute
+    the mean true and mean predicted alpha and emit one row per mix.
+    """
+    true_means: list[float] = []
+    pred_means: list[float] = []
+    file_scores: list[dict] = []
+
+    for fs in result.file_scores:
+        windows = fs.get("windows") or []
+        if not windows:
+            continue
+        true_mean = float(np.mean([w["true_alpha"] for w in windows]))
+        pred_mean = float(np.mean([w["predicted_alpha"] for w in windows]))
+        true_means.append(true_mean)
+        pred_means.append(pred_mean)
+        file_scores.append({
+            "feature_path": fs.get("feature_path"),
+            "mix_path": fs.get("mix_path"),
+            "n_windows": len(windows),
+            "true_alpha_mean": true_mean,
+            "predicted_alpha_mean": pred_mean,
+        })
+
+    return EvalResult(
+        file_scores=file_scores,
+        y_true_alpha=np.array(true_means, dtype=np.float64),
+        y_pred_alpha=np.array(pred_means, dtype=np.float64),
+    )
+
+
+def _emit_report(
+    result: EvalResult,
+    cfg,
+    model_path: Path,
+    test_entries: list[dict],
+    threshold: float,
+    output_dir: Path,
+    mlflow_logger: MLflowLogger,
+    mlflow_metric_prefix: str,
+    mlflow_artifact_path: str,
+) -> None:
+    """Compute metrics + plots for one EvalResult and stream them to disk + MLflow."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("=" * 60)
+    logger.info("Report: %s", output_dir)
+
     metrics = compute_metrics(result, cfg.evaluation.metrics)
-    plot_paths = generate_plots(result, cfg.evaluation.plots, output_dir, run_name=cfg.name)
+    plot_paths = generate_plots(
+        result, cfg.evaluation.plots, output_dir, run_name=cfg.name
+    )
 
     # Threshold sweep (binary models only)
     sweep_result = None
@@ -183,7 +298,6 @@ def main(argv: list[str] | None = None) -> None:
             step=ts_cfg["step"],
         )
 
-    # Save evaluation report
     report = {
         "experiment": cfg.name,
         "model_path": str(model_path),
@@ -199,35 +313,19 @@ def main(argv: list[str] | None = None) -> None:
         json.dump(report, f, indent=2)
     logger.info("Saved report: %s", report_path)
 
-    # Save metrics summary as CSV
     metrics_csv = _save_metrics_csv(metrics, output_dir)
 
-    # MLflow — resume training run
-    artifact_dir = Path("data/artifacts") / cfg.name
-    mlflow_experiment_name = resolve_mlflow_experiment_name(cfg.mlflow_experiment_name)
-    mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
-
-    run_meta = MLflowLogger.load_run_meta(artifact_dir)
-    if run_meta:
-        mlf.resume_run(run_meta["run_id"])
-    else:
-        logger.warning("No training run found — creating a standalone eval run")
-        mlf.start_run(run_name=f"{cfg.name}-eval")
-
-    mlf.log_metrics({f"eval_{k}": v for k, v in metrics.items()})
+    # MLflow — prefixed metrics + per-subdir artifact path
+    mlflow_logger.log_metrics({f"{mlflow_metric_prefix}{k}": v for k, v in metrics.items()})
     if sweep_result:
-        mlf.log_metrics({
-            "eval_sweep_best_threshold": sweep_result["best_threshold"],
-            "eval_sweep_best_f1": sweep_result["best_f1"],
+        mlflow_logger.log_metrics({
+            f"{mlflow_metric_prefix}sweep_best_threshold": sweep_result["best_threshold"],
+            f"{mlflow_metric_prefix}sweep_best_f1": sweep_result["best_f1"],
         })
     for plot_path in plot_paths:
-        mlf.log_artifact(plot_path, artifact_path="eval")
-    mlf.log_artifact(metrics_csv, artifact_path="eval")
-    mlf.end_run()
+        mlflow_logger.log_artifact(plot_path, artifact_path=mlflow_artifact_path)
+    mlflow_logger.log_artifact(metrics_csv, artifact_path=mlflow_artifact_path)
 
-    # Print summary
-    logger.info("-" * 60)
-    logger.info("EVALUATION RESULTS")
     logger.info("-" * 60)
     for name, value in metrics.items():
         logger.info("  %-30s %.4f", name, value)
@@ -236,10 +334,6 @@ def main(argv: list[str] | None = None) -> None:
             "  %-30s %.4f (at threshold %.2f)",
             "best_f1*", sweep_result["best_f1"], sweep_result["best_threshold"],
         )
-    logger.info("-" * 60)
-    logger.info("Plots: %s", [str(p) for p in plot_paths])
-    logger.info("Report: %s", report_path)
-    logger.info("Done.")
 
 
 if __name__ == "__main__":
