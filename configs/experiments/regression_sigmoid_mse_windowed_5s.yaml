@@ -1,0 +1,53 @@
+experiment:
+  name: regression_sigmoid_mse_w5s
+  description: "Regression CNN on ARIA, from scratch — sigmoid + MSE 5s windows and crops"
+  mlflow_experiment: aria-regression-baselines
+  tags:
+    task: regression_sigmoid_mse_w5s
+    strategy: from_scratch
+
+dataset: configs/datasets/aria_w5s.yaml
+features: configs/features/stft_db_44k_60s.yaml
+model: configs/models/spec_cnn_regression_v1.yaml
+
+training:
+  epochs: 100
+  batch_size: 50
+  learning_rate: 0.001
+  optimizer: adam
+  seed: 123
+
+  crop:
+    window_sec: 5.0
+    # Windowed-regression strategies on canonical_v3.jsonl:
+    #   aligned        - emit every kept window (~11 per mix). Full coverage
+    #                    each epoch; samples_per_file is ignored.
+    #   aligned-random - emit `samples_per_file` random windows per mix per
+    #                    epoch (resampled each epoch). Use a value < 11 to
+    #                    speed up epochs while still seeing all windows over
+    #                    several epochs. If samples_per_file >= kept_count
+    #                    for a given mix, all of that mix's windows are used.
+    # Validation always runs in 'aligned' mode regardless of this setting,
+    # so val_mae is computed on a stable window set.
+    strategy: aligned-random
+    samples_per_file: 3
+
+  shuffle_buffer_multiplier: 4
+
+  callbacks:
+    early_stopping:
+      monitor: val_mae
+      patience: 15
+    reduce_lr:
+      monitor: val_mae
+      factor: 0.5
+      patience: 5
+
+  augmentation:
+    enabled: false
+
+evaluation:
+  metrics: [mae, rmse, r2, pearson, spearman]
+  plots: [prediction_scatter, error_by_alpha_bucket, median_pred_by_alpha_bucket]
+  threshold_sweep:
+    enabled: false

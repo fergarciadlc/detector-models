@@ -8,21 +8,26 @@ split, compute metrics, generate plots, and log everything to MLflow.
 Usage:
     python -m pipelines.evaluate --config configs/experiments/exp_001.yaml
     python -m pipelines.evaluate --config configs/experiments/exp_001.yaml \
-        --model-path data/artifacts/specnn_amplitude_baseline/best_model.keras
+        --model-path data/artifacts/exp_001/best_model.keras
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import logging
 from pathlib import Path
 
 import tensorflow as tf
 
+import numpy as np
+
 from src.config import load_experiment
-from src.evaluation.evaluator import evaluate_test_set
+from src.evaluation.evaluators import create_evaluator
+from src.evaluation.evaluators.regression_windowed import WindowedRegressionEvaluator
 from src.evaluation.metrics import compute_metrics, generate_plots, threshold_sweep
+from src.evaluation.result import EvalResult
 from src.mlflow_logger import MLflowLogger, resolve_mlflow_experiment_name
 from src.training.data_loader import load_feature_manifest
 
@@ -58,7 +63,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Path to Stage 2 feature manifest JSON. "
-            "If omitted, auto-resolved from data/features/{feature_name}/feature_manifest.json"
+            "If omitted, auto-resolved from "
+            "data/features/{feature_name}/{dataset_name}/feature_manifest.json"
         ),
     )
     parser.add_argument(
@@ -70,6 +76,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _save_metrics_csv(metrics: dict[str, float], output_dir: Path) -> Path:
+    """Save the evaluation metrics summary as a two-column CSV."""
+    path = output_dir / "eval_metrics.csv"
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["metric", "value"])
+        for name, value in metrics.items():
+            writer.writerow([name, f"{value:.6f}"])
+    logger.info("Saved metrics CSV: %s", path)
+    return path
+
+
 def _resolve_model_path(experiment_name: str) -> Path:
     path = Path("data/artifacts") / experiment_name / "best_model.keras"
     if not path.exists():
@@ -79,8 +97,8 @@ def _resolve_model_path(experiment_name: str) -> Path:
     return path
 
 
-def _resolve_feature_manifest(features_name: str) -> Path:
-    path = Path("data/features") / features_name / "feature_manifest.json"
+def _resolve_feature_manifest(features_name: str, dataset_name: str) -> Path:
+    path = Path("data/features") / features_name / dataset_name / "feature_manifest.json"
     if not path.exists():
         raise FileNotFoundError(
             f"Feature manifest not found: {path}. Run Stage 2 (extract_features) first."
@@ -95,50 +113,57 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("=" * 60)
     logger.info("STAGE 4: EVALUATION")
     logger.info("=" * 60)
-    logger.info("Experiment: %s", cfg.name)
+    logger.info("Experiment  : %s", cfg.name)
+    logger.info("Output type : %s", cfg.model.output.type)
 
     # Resolve paths
-    if args.model_path:
-        model_path = Path(args.model_path)
-    else:
-        model_path = _resolve_model_path(cfg.name)
+    model_path = Path(args.model_path) if args.model_path else _resolve_model_path(cfg.name)
     logger.info("Model: %s", model_path)
 
     if args.feature_manifest:
         manifest_path = Path(args.feature_manifest)
     else:
-        manifest_path = _resolve_feature_manifest(cfg.features.name)
+        manifest_path = _resolve_feature_manifest(cfg.features.name, cfg.dataset.name)
     logger.info("Feature manifest: %s", manifest_path)
 
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-    else:
-        output_dir = Path("data/artifacts") / cfg.name / "eval"
+    output_dir = (
+        Path(args.output_dir) if args.output_dir
+        else Path("data/artifacts") / cfg.name / "eval"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Output dir: %s", output_dir)
 
-    # Load model
+    # Load model and test entries
     logger.info("Loading model...")
     model = tf.keras.models.load_model(model_path)
 
-    # Load test entries
     _, entries = load_feature_manifest(manifest_path)
     test_entries = [e for e in entries if e["split"] == "test"]
     if not test_entries:
         raise ValueError("No test entries found in feature manifest")
     logger.info("Test files: %d", len(test_entries))
 
-    # Inference config
+    # Run evaluation
     crop_frames = cfg.input_shape[0]
     threshold = cfg.model.output.threshold or 0.5
-    logger.info(
-        "Crop frames: %d, threshold: %.2f",
-        crop_frames, threshold,
-    )
+    logger.info("Crop frames: %d, threshold: %.2f", crop_frames, threshold)
 
-    # Run evaluation
-    logger.info("Running inference...")
-    result = evaluate_test_set(
+    is_windowed = cfg.training.crop.strategy in ("aligned", "aligned-random")
+    if is_windowed:
+        if cfg.model.output.type != "regression":
+            raise ValueError(
+                f"crop.strategy={cfg.training.crop.strategy!r} eval requires "
+                "model.output.type='regression'."
+            )
+        evaluator = WindowedRegressionEvaluator(
+            windows_jsonl_path=cfg.dataset.split.predefined_path,
+            dataset_base_path=cfg.dataset.path,
+            sample_rate=cfg.features.audio.sample_rate,
+            hop_length=cfg.features.stft.hop_length,
+        )
+    else:
+        evaluator = create_evaluator(cfg.model.output.type)
+    result = evaluator.run(
         model=model,
         entries=test_entries,
         crop_frames=crop_frames,
@@ -146,41 +171,137 @@ def main(argv: list[str] | None = None) -> None:
         batch_size=cfg.training.batch_size,
     )
 
-    # Compute metrics
-    logger.info("Computing metrics: %s", cfg.evaluation.metrics)
-    metrics = compute_metrics(
-        y_true=result.y_true,
-        y_pred_prob=result.y_pred_prob,
-        y_pred=result.y_pred,
-        metric_names=cfg.evaluation.metrics,
+    # MLflow — resume training run
+    artifact_dir = Path("data/artifacts") / cfg.name
+    mlflow_experiment_name = resolve_mlflow_experiment_name(cfg.mlflow_experiment_name)
+    mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
+    run_meta = MLflowLogger.load_run_meta(artifact_dir)
+    if run_meta:
+        mlf.resume_run(run_meta["run_id"])
+    else:
+        logger.warning("No training run found — creating a standalone eval run")
+        mlf.start_run(run_name=f"{cfg.name}-eval")
+
+    if is_windowed:
+        # Per-window report (the native output of WindowedRegressionEvaluator).
+        windows_dir = output_dir / "windows"
+        _emit_report(
+            result=result,
+            cfg=cfg,
+            model_path=model_path,
+            test_entries=test_entries,
+            threshold=threshold,
+            output_dir=windows_dir,
+            mlflow_logger=mlf,
+            mlflow_metric_prefix="eval_window_",
+            mlflow_artifact_path="eval/windows",
+        )
+        # Track-level rollup: one (mean_true, mean_pred) per mix.
+        track_result = _aggregate_to_track_level(result)
+        tracks_dir = output_dir / "tracks"
+        _emit_report(
+            result=track_result,
+            cfg=cfg,
+            model_path=model_path,
+            test_entries=test_entries,
+            threshold=threshold,
+            output_dir=tracks_dir,
+            mlflow_logger=mlf,
+            mlflow_metric_prefix="eval_track_",
+            mlflow_artifact_path="eval/tracks",
+        )
+    else:
+        # Legacy non-windowed path: single flat report under eval/.
+        _emit_report(
+            result=result,
+            cfg=cfg,
+            model_path=model_path,
+            test_entries=test_entries,
+            threshold=threshold,
+            output_dir=output_dir,
+            mlflow_logger=mlf,
+            mlflow_metric_prefix="eval_",
+            mlflow_artifact_path="eval",
+        )
+
+    mlf.end_run()
+    logger.info("Done.")
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _aggregate_to_track_level(result: EvalResult) -> EvalResult:
+    """Build a track-level EvalResult from a windowed one.
+
+    For each per-mix `file_score` in the source result (which carries a
+    `windows: [...]` list with per-window true / predicted alphas), compute
+    the mean true and mean predicted alpha and emit one row per mix.
+    """
+    true_means: list[float] = []
+    pred_means: list[float] = []
+    file_scores: list[dict] = []
+
+    for fs in result.file_scores:
+        windows = fs.get("windows") or []
+        if not windows:
+            continue
+        true_mean = float(np.mean([w["true_alpha"] for w in windows]))
+        pred_mean = float(np.mean([w["predicted_alpha"] for w in windows]))
+        true_means.append(true_mean)
+        pred_means.append(pred_mean)
+        file_scores.append({
+            "feature_path": fs.get("feature_path"),
+            "mix_path": fs.get("mix_path"),
+            "n_windows": len(windows),
+            "true_alpha_mean": true_mean,
+            "predicted_alpha_mean": pred_mean,
+        })
+
+    return EvalResult(
+        file_scores=file_scores,
+        y_true_alpha=np.array(true_means, dtype=np.float64),
+        y_pred_alpha=np.array(pred_means, dtype=np.float64),
     )
 
-    # Generate plots
-    logger.info("Generating plots: %s", cfg.evaluation.plots)
+
+def _emit_report(
+    result: EvalResult,
+    cfg,
+    model_path: Path,
+    test_entries: list[dict],
+    threshold: float,
+    output_dir: Path,
+    mlflow_logger: MLflowLogger,
+    mlflow_metric_prefix: str,
+    mlflow_artifact_path: str,
+) -> None:
+    """Compute metrics + plots for one EvalResult and stream them to disk + MLflow."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("=" * 60)
+    logger.info("Report: %s", output_dir)
+
+    metrics = compute_metrics(result, cfg.evaluation.metrics)
     plot_paths = generate_plots(
-        y_true=result.y_true,
-        y_pred_prob=result.y_pred_prob,
-        y_pred=result.y_pred,
-        plot_names=cfg.evaluation.plots,
-        output_dir=output_dir,
+        result, cfg.evaluation.plots, output_dir, run_name=cfg.name
     )
 
-    # Threshold sweep
+    # Threshold sweep (binary models only)
     sweep_result = None
     ts_cfg = cfg.evaluation.threshold_sweep
-    if ts_cfg.get("enabled"):
+    if ts_cfg.get("enabled") and result.has_binary:
         logger.info("Running threshold sweep...")
         sweep_result = threshold_sweep(
-            y_true=result.y_true,
-            y_pred_prob=result.y_pred_prob,
+            y_true=result.y_true_binary,
+            y_pred_prob=result.y_pred_binary_prob,
             t_range=ts_cfg["range"],
             step=ts_cfg["step"],
         )
 
-    # Save evaluation report
     report = {
         "experiment": cfg.name,
         "model_path": str(model_path),
+        "output_type": cfg.model.output.type,
         "test_files": len(test_entries),
         "threshold": threshold,
         "metrics": metrics,
@@ -192,46 +313,27 @@ def main(argv: list[str] | None = None) -> None:
         json.dump(report, f, indent=2)
     logger.info("Saved report: %s", report_path)
 
-    # Log to MLflow — resume the training run so everything is in one place
-    artifact_dir = Path("data/artifacts") / cfg.name
-    mlflow_experiment_name = resolve_mlflow_experiment_name(cfg.mlflow_experiment_name)
-    logger.info("MLflow experiment: %s", mlflow_experiment_name)
-    mlf = MLflowLogger(experiment_name=mlflow_experiment_name)
+    metrics_csv = _save_metrics_csv(metrics, output_dir)
 
-    run_meta = MLflowLogger.load_run_meta(artifact_dir)
-    if run_meta:
-        mlf.resume_run(run_meta["run_id"])
-    else:
-        logger.warning("No training run found — creating a standalone eval run")
-        mlf.start_run(run_name=f"{cfg.name}-eval")
-
-    eval_metrics = {f"eval_{k}": v for k, v in metrics.items()}
-    mlf.log_metrics(eval_metrics)
+    # MLflow — prefixed metrics + per-subdir artifact path
+    mlflow_logger.log_metrics({f"{mlflow_metric_prefix}{k}": v for k, v in metrics.items()})
     if sweep_result:
-        mlf.log_metrics({
-            "eval_sweep_best_threshold": sweep_result["best_threshold"],
-            "eval_sweep_best_f1": sweep_result["best_f1"],
+        mlflow_logger.log_metrics({
+            f"{mlflow_metric_prefix}sweep_best_threshold": sweep_result["best_threshold"],
+            f"{mlflow_metric_prefix}sweep_best_f1": sweep_result["best_f1"],
         })
-    # mlf.log_artifact(report_path, artifact_path="eval")
     for plot_path in plot_paths:
-        mlf.log_artifact(plot_path, artifact_path="eval")
-    mlf.end_run()
+        mlflow_logger.log_artifact(plot_path, artifact_path=mlflow_artifact_path)
+    mlflow_logger.log_artifact(metrics_csv, artifact_path=mlflow_artifact_path)
 
-    # Print summary
-    logger.info("-" * 60)
-    logger.info("EVALUATION RESULTS")
     logger.info("-" * 60)
     for name, value in metrics.items():
-        logger.info("  %-12s %.4f", name, value)
+        logger.info("  %-30s %.4f", name, value)
     if sweep_result:
         logger.info(
-            "  %-12s %.4f (at threshold %.2f)",
+            "  %-30s %.4f (at threshold %.2f)",
             "best_f1*", sweep_result["best_f1"], sweep_result["best_threshold"],
         )
-    logger.info("-" * 60)
-    logger.info("Plots: %s", [str(p) for p in plot_paths])
-    logger.info("Report: %s", report_path)
-    logger.info("Done.")
 
 
 if __name__ == "__main__":

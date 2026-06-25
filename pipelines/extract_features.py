@@ -18,6 +18,7 @@ import argparse
 import json
 import logging
 import os
+import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,23 +76,38 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _resolve_manifest(dataset_name: str, manifest_dir: str = "data/manifests") -> Path:
-    """Find the most recent manifest matching the dataset name."""
+def _resolve_manifest(experiment_name: str, manifest_dir: str = "data/manifests") -> Path:
+    """Find the manifest for the given experiment name."""
     manifest_dir = Path(manifest_dir)
-    candidates = sorted(manifest_dir.glob(f"{dataset_name}*_split.json"))
+    candidates = sorted(manifest_dir.glob(f"{experiment_name}*_split.json"))
     if not candidates:
         raise FileNotFoundError(
-            f"No manifest found for dataset '{dataset_name}' in {manifest_dir}"
+            f"No manifest found for experiment '{experiment_name}' in {manifest_dir}"
         )
     return candidates[-1]
 
 
-def _npy_filename(audio_path: Path) -> str:
-    """Derive .npy filename from the source audio path.
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
-    Preserves parent dir name to avoid collisions between files with the
-    same basename in different subdirectories (e.g. 001/000142.mp3 vs 002/000142.mp3).
+
+def _npy_filename(audio_path: Path) -> str:
+    """Derive a collision-free .npy filename from the source audio path.
+
+    If a UUID-formatted component is found in the path (e.g. ARIA track_id),
+    the filename is:  {uuid}_{parent}_{stem}.npy
+      e.g.  d3114519-..._U0_mix_S-empty.npy
+
+    Otherwise (e.g. FMA) falls back to the original scheme:
+      {parent}_{stem}.npy  (e.g.  001_000142.npy)
     """
+    uuid_part = next(
+        (part for part in audio_path.parts if _UUID_RE.match(part)),
+        None,
+    )
+    if uuid_part:
+        return f"{uuid_part}_{audio_path.parent.name}_{audio_path.stem}.npy"
     return f"{audio_path.parent.name}_{audio_path.stem}.npy"
 
 
@@ -113,7 +129,9 @@ def extract_file(
     ):
         os.environ.setdefault(k, "1")
 
-    y, duration_sec = load_audio(audio_file.path, features_cfg.audio)
+    y, duration_sec, start_offset_sec = load_audio(
+        audio_file.path, features_cfg.audio, features_cfg.max_duration_sec
+    )
     S = compute_spectrogram(y, features_cfg)
 
     npy_name = _npy_filename(audio_file.path)
@@ -121,7 +139,7 @@ def extract_file(
     npy_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(npy_path, S)
 
-    return {
+    entry: dict = {
         "feature_path": str(npy_path),
         "source_audio": str(audio_file.path),
         "label": audio_file.label,
@@ -129,7 +147,11 @@ def extract_file(
         "n_frames": S.shape[0],
         "n_freq_bins": S.shape[1],
         "duration_sec": round(duration_sec, 2),
+        "start_offset_sec": round(start_offset_sec, 4),
     }
+    if audio_file.ai_ratio is not None:
+        entry["ai_energy_ratio"] = audio_file.ai_ratio
+    return entry
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -149,18 +171,20 @@ def main(argv: list[str] | None = None) -> None:
     if features_cfg.audio.hf_cut_hz:
         logger.info("HF cut: %d Hz", features_cfg.audio.hf_cut_hz)
     logger.info("Normalization: %s", features_cfg.normalization.strategy)
+    if features_cfg.max_duration_sec is not None:
+        logger.info("Max duration: %d sec", features_cfg.max_duration_sec)
 
     # Resolve manifest
     if args.manifest:
         manifest_path = Path(args.manifest)
     else:
-        manifest_path = _resolve_manifest(dataset_name)
+        manifest_path = _resolve_manifest(cfg.name)
     logger.info("Manifest: %s", manifest_path)
 
     split, manifest_meta = read_manifest(manifest_path)
 
-    # Prepare output dirs
-    output_root = Path(args.output_dir) / features_cfg.name
+    # Prepare output dirs -> data/features/{feature}/{dataset}/{split}/
+    output_root = Path(args.output_dir) / features_cfg.name / dataset_name
     split_dirs = {}
     for split_name in ("train", "val", "test"):
         d = output_root / split_name
@@ -182,8 +206,7 @@ def main(argv: list[str] | None = None) -> None:
         if workers == 1:
             for af in tqdm(files, desc=split_name, unit="file"):
                 try:
-                    class_out_dir = out_dir / af.label_name
-                    entry = extract_file(af, features_cfg, class_out_dir)
+                    entry = extract_file(af, features_cfg, out_dir)
                     entry["split"] = split_name
                     entries.append(entry)
                 except Exception:
@@ -197,7 +220,7 @@ def main(argv: list[str] | None = None) -> None:
                         extract_file,
                         af,
                         features_cfg,
-                        out_dir / af.label_name,
+                        out_dir,
                     ): af
                     for af in files
                 }

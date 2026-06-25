@@ -2,12 +2,21 @@
 """
 Metric computation and plot generation for evaluation.
 
-Supports: accuracy, F1, AUC-ROC, EER, confusion matrix, ROC curve, DET curve.
+Binary metrics  (require EvalResult.has_binary):
+    accuracy, f1, auc_roc, eer
+
+Regression metrics  (require EvalResult.has_regression):
+    mae, rmse, r2, pearson, spearman
+
+Plots:
+    Binary:     confusion_matrix, roc_curve, det_curve
+    Regression: prediction_scatter, error_by_alpha_bucket
 """
 
 from __future__ import annotations
 
 import logging
+from math import sqrt
 from pathlib import Path
 
 import matplotlib
@@ -22,89 +31,91 @@ from sklearn.metrics import (
     RocCurveDisplay,
     accuracy_score,
     f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
     roc_auc_score,
     roc_curve,
 )
+from scipy.stats import pearsonr, spearmanr
+
+from src.evaluation.result import EvalResult
 
 logger = logging.getLogger(__name__)
 
+# ── Metric sets by type ────────────────────────────────────────────────────────
 
-def _compute_eer(y_true: np.ndarray, y_pred_prob: np.ndarray) -> float:
-    """Compute Equal Error Rate from ROC curve."""
-    fpr, tpr, _ = roc_curve(y_true, y_pred_prob)
-    fnr = 1 - tpr
-    idx = np.nanargmin(np.abs(fpr - fnr))
-    eer = float((fpr[idx] + fnr[idx]) / 2)
-    return eer
+_BINARY_METRICS = {"accuracy", "f1", "auc_roc", "eer"}
+_REGRESSION_METRICS = {"mae", "rmse", "r2", "pearson", "spearman"}
+
+_BINARY_PLOTS = {"confusion_matrix", "roc_curve", "det_curve"}
+_REGRESSION_PLOTS = {
+    "prediction_scatter",
+    "error_by_alpha_bucket",
+    "residual_histogram",
+    "abs_error_cdf",
+    "median_pred_by_alpha_bucket",
+}
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
 
 
 def compute_metrics(
-    y_true: np.ndarray,
-    y_pred_prob: np.ndarray,
-    y_pred: np.ndarray,
+    result: EvalResult,
     metric_names: list[str],
 ) -> dict[str, float]:
-    """Compute requested evaluation metrics.
+    """Compute requested metrics from an EvalResult.
 
-    Args:
-        y_true: Ground-truth binary labels.
-        y_pred_prob: Predicted probabilities (for AUC, EER).
-        y_pred: Predicted binary labels (for accuracy, F1).
-        metric_names: List of metric names to compute.
-
-    Returns:
-        Dict of {metric_name: value}.
+    Regression metrics are prefixed ``regression_`` in the returned dict;
+    binary metrics are prefixed ``binary_`` when the model also has a
+    regression head (to make them distinguishable in MLflow).
     """
-    results: dict[str, float] = {}
-
-    dispatch = {
-        "accuracy": lambda: float(accuracy_score(y_true, y_pred)),
-        "f1": lambda: float(f1_score(y_true, y_pred, zero_division=0)),
-        "auc_roc": lambda: float(roc_auc_score(y_true, y_pred_prob)),
-        "eer": lambda: _compute_eer(y_true, y_pred_prob),
-    }
+    out: dict[str, float] = {}
+    multitask = result.has_binary and result.has_regression
 
     for name in metric_names:
-        fn = dispatch.get(name)
-        if fn is None:
-            logger.warning("Unknown metric '%s', skipping", name)
-            continue
         try:
-            results[name] = fn()
+            if name in _REGRESSION_METRICS:
+                if not result.has_regression:
+                    logger.warning("Metric '%s' requires regression output, skipping", name)
+                    continue
+                value = _compute_regression_metric(name, result)
+                key = f"regression_{name}" if multitask else name
+                out[key] = value
+
+            elif name in _BINARY_METRICS:
+                if not result.has_binary:
+                    logger.warning("Metric '%s' requires binary output, skipping", name)
+                    continue
+                value = _compute_binary_metric(name, result)
+                key = f"binary_{name}" if multitask else name
+                out[key] = value
+
+            else:
+                logger.warning("Unknown metric '%s', skipping", name)
+
         except Exception:
             logger.warning("Failed to compute metric '%s'", name, exc_info=True)
-            results[name] = float("nan")
+            out[name] = float("nan")
 
-    return results
+    return out
 
 
 def generate_plots(
-    y_true: np.ndarray,
-    y_pred_prob: np.ndarray,
-    y_pred: np.ndarray,
+    result: EvalResult,
     plot_names: list[str],
     output_dir: Path,
+    run_name: str | None = None,
 ) -> list[Path]:
-    """Generate evaluation plots and save as PNG.
-
-    Args:
-        y_true: Ground-truth binary labels.
-        y_pred_prob: Predicted probabilities.
-        y_pred: Predicted binary labels.
-        plot_names: List of plot names to generate.
-        output_dir: Directory to save plot PNGs.
-
-    Returns:
-        List of paths to generated plot files.
-    """
+    """Generate evaluation plots and save as PNG files."""
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     saved: list[Path] = []
 
     for name in plot_names:
         try:
-            path = _generate_one_plot(
-                name, y_true, y_pred_prob, y_pred, output_dir,
-            )
+            path = _generate_one_plot(name, result, output_dir, run_name)
             if path:
                 saved.append(path)
         except Exception:
@@ -113,92 +124,253 @@ def generate_plots(
     return saved
 
 
-def _generate_one_plot(
-    name: str,
+def threshold_sweep(
     y_true: np.ndarray,
     y_pred_prob: np.ndarray,
-    y_pred: np.ndarray,
-    output_dir: Path,
+    t_range: list[float],
+    step: float,
+) -> dict:
+    """Compute accuracy and F1 across a range of binary thresholds."""
+    thresholds = list(np.arange(t_range[0], t_range[1] + step / 2, step))
+    accuracies = []
+    f1_scores_list = []
+
+    for t in thresholds:
+        y_pred = (y_pred_prob >= t).astype(np.int32)
+        accuracies.append(float(accuracy_score(y_true, y_pred)))
+        f1_scores_list.append(float(f1_score(y_true, y_pred, zero_division=0)))
+
+    best_idx = int(np.argmax(f1_scores_list))
+    logger.info(
+        "Threshold sweep: best F1=%.4f at threshold=%.2f",
+        f1_scores_list[best_idx], thresholds[best_idx],
+    )
+    return {
+        "thresholds": [round(t, 4) for t in thresholds],
+        "accuracy": accuracies,
+        "f1": f1_scores_list,
+        "best_threshold": round(thresholds[best_idx], 4),
+        "best_f1": f1_scores_list[best_idx],
+    }
+
+
+# ── Metric implementations ─────────────────────────────────────────────────────
+
+
+def _compute_binary_metric(name: str, result: EvalResult) -> float:
+    y_true = result.y_true_binary
+    y_prob = result.y_pred_binary_prob
+    y_pred = result.y_pred_binary
+
+    dispatch = {
+        "accuracy": lambda: float(accuracy_score(y_true, y_pred)),
+        "f1": lambda: float(f1_score(y_true, y_pred, zero_division=0)),
+        "auc_roc": lambda: float(roc_auc_score(y_true, y_prob)),
+        "eer": lambda: _compute_eer(y_true, y_prob),
+    }
+    return dispatch[name]()
+
+
+def _compute_regression_metric(name: str, result: EvalResult) -> float:
+    y_true = result.y_true_alpha
+    y_pred = result.y_pred_alpha
+
+    dispatch = {
+        "mae": lambda: float(mean_absolute_error(y_true, y_pred)),
+        "rmse": lambda: float(sqrt(mean_squared_error(y_true, y_pred))),
+        "r2": lambda: float(r2_score(y_true, y_pred)),
+        "pearson": lambda: float(pearsonr(y_true, y_pred)[0]),
+        "spearman": lambda: float(spearmanr(y_true, y_pred)[0]),
+    }
+    return dispatch[name]()
+
+
+def _compute_eer(y_true: np.ndarray, y_pred_prob: np.ndarray) -> float:
+    fpr, tpr, _ = roc_curve(y_true, y_pred_prob)
+    fnr = 1 - tpr
+    idx = np.nanargmin(np.abs(fpr - fnr))
+    return float((fpr[idx] + fnr[idx]) / 2)
+
+
+# ── Plot implementations ───────────────────────────────────────────────────────
+
+
+def _generate_one_plot(
+    name: str, result: EvalResult, output_dir: Path, run_name: str | None = None
 ) -> Path | None:
-    """Generate a single plot."""
+    if name in _BINARY_PLOTS:
+        if not result.has_binary:
+            logger.warning("Plot '%s' requires binary output, skipping", name)
+            return None
+        return _plot_binary(name, result, output_dir, run_name)
+
+    if name in _REGRESSION_PLOTS:
+        if not result.has_regression:
+            logger.warning("Plot '%s' requires regression output, skipping", name)
+            return None
+        return _plot_regression(name, result, output_dir, run_name)
+
+    logger.warning("Unknown plot '%s', skipping", name)
+    return None
+
+
+def _plot_binary(name: str, result: EvalResult, output_dir: Path, run_name: str | None = None) -> Path | None:
+    y_true = result.y_true_binary
+    y_prob = result.y_pred_binary_prob
+    y_pred = result.y_pred_binary
+
     fig, ax = plt.subplots(figsize=(7, 6))
 
     if name == "confusion_matrix":
         ConfusionMatrixDisplay.from_predictions(
             y_true, y_pred,
-            display_labels=["Real", "Fake"],
+            display_labels=["Real", "AI"],
             cmap="Blues",
             ax=ax,
         )
         ax.set_title("Confusion Matrix")
 
     elif name == "roc_curve":
-        RocCurveDisplay.from_predictions(
-            y_true, y_pred_prob,
-            name="Detector",
-            ax=ax,
-        )
+        RocCurveDisplay.from_predictions(y_true, y_prob, name="Detector", ax=ax)
         ax.set_title("ROC Curve")
         ax.plot([0, 1], [0, 1], "k--", alpha=0.3)
 
     elif name == "det_curve":
-        DetCurveDisplay.from_predictions(
-            y_true, y_pred_prob,
-            name="Detector",
-            ax=ax,
-        )
+        DetCurveDisplay.from_predictions(y_true, y_prob, name="Detector", ax=ax)
         ax.set_title("DET Curve")
 
-    else:
-        logger.warning("Unknown plot '%s', skipping", name)
-        plt.close(fig)
-        return None
-
+    if run_name:
+        fig.suptitle(run_name, fontsize=10, y=0.995)
     fig.tight_layout()
     path = output_dir / f"{name}.png"
     fig.savefig(path, dpi=150)
     plt.close(fig)
-
     logger.info("Saved plot: %s", path)
     return path
 
 
-def threshold_sweep(
-    y_true: np.ndarray,
-    y_pred_prob: np.ndarray,
-    t_range: list[float],
-    step: float,
-) -> dict[str, list]:
-    """Compute metrics across a range of thresholds.
+def _plot_regression(name: str, result: EvalResult, output_dir: Path, run_name: str | None = None) -> Path | None:
+    y_true = result.y_true_alpha
+    y_pred = result.y_pred_alpha
 
-    Args:
-        y_true: Ground-truth labels.
-        y_pred_prob: Predicted probabilities.
-        t_range: [min_threshold, max_threshold].
-        step: Step size for threshold values.
+    fig, ax = plt.subplots(figsize=(7, 6))
 
-    Returns:
-        Dict with 'thresholds', 'accuracy', 'f1' lists.
-    """
-    thresholds = list(np.arange(t_range[0], t_range[1] + step / 2, step))
-    accuracies = []
-    f1_scores = []
+    if name == "prediction_scatter":
+        ax.scatter(y_true, y_pred, alpha=0.3, s=10, color="steelblue")
+        lims = [0.0, 1.0]
+        ax.plot(lims, lims, "k--", alpha=0.5, label="Perfect prediction")
+        ax.set_xlabel("True ai_energy_ratio")
+        ax.set_ylabel("Predicted ai_energy_ratio")
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
+        ax.set_title("Prediction Scatter (ai_energy_ratio)")
+        mae = float(mean_absolute_error(y_true, y_pred))
+        ax.text(0.05, 0.92, f"MAE = {mae:.4f}", transform=ax.transAxes, fontsize=10)
+        ax.legend()
 
-    for t in thresholds:
-        y_pred = (y_pred_prob >= t).astype(np.int32)
-        accuracies.append(float(accuracy_score(y_true, y_pred)))
-        f1_scores.append(float(f1_score(y_true, y_pred, zero_division=0)))
+    elif name == "error_by_alpha_bucket":
+        bins = np.arange(0.0, 1.1, 0.1)
+        bucket_mae = []
+        bucket_labels = []
+        bucket_counts = []
+        for lo, hi in zip(bins[:-1], bins[1:]):
+            mask = (y_true >= lo) & (y_true < hi)
+            if name == "error_by_alpha_bucket" and hi == 1.1:
+                mask = y_true >= lo
+            count = int(mask.sum())
+            mae_val = float(mean_absolute_error(y_true[mask], y_pred[mask])) if count > 0 else 0.0
+            bucket_labels.append(f"{lo:.1f}–{hi:.1f}")
+            bucket_mae.append(mae_val)
+            bucket_counts.append(count)
 
-    best_f1_idx = int(np.argmax(f1_scores))
-    logger.info(
-        "Threshold sweep: best F1=%.4f at threshold=%.2f",
-        f1_scores[best_f1_idx], thresholds[best_f1_idx],
-    )
+        x = np.arange(len(bucket_labels))
+        bars = ax.bar(x, bucket_mae, color="steelblue", alpha=0.8)
+        ax.set_xticks(x)
+        ax.set_xticklabels(bucket_labels, rotation=45, ha="right")
+        ax.set_xlabel("True ai_energy_ratio bucket")
+        ax.set_ylabel("MAE")
+        ax.set_title("MAE by ai_energy_ratio Bucket")
 
-    return {
-        "thresholds": [round(t, 4) for t in thresholds],
-        "accuracy": accuracies,
-        "f1": f1_scores,
-        "best_threshold": round(thresholds[best_f1_idx], 4),
-        "best_f1": f1_scores[best_f1_idx],
-    }
+        # Annotate bar tops with sample counts
+        for bar, count in zip(bars, bucket_counts):
+            if count > 0:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.002,
+                    f"n={count}",
+                    ha="center", va="bottom", fontsize=7,
+                )
+
+    elif name == "residual_histogram":
+        residuals = y_pred - y_true
+        ax.hist(residuals, bins=40, color="steelblue", alpha=0.8, edgecolor="white")
+        ax.axvline(0.0, color="k", linestyle="--", alpha=0.5, label="Zero error")
+        mean_res = float(np.mean(residuals))
+        std_res = float(np.std(residuals))
+        ax.axvline(mean_res, color="crimson", linestyle="-", alpha=0.8,
+                   label=f"Mean = {mean_res:+.4f}")
+        ax.set_xlabel("Residual (predicted − true)")
+        ax.set_ylabel("Count")
+        ax.set_title("Residual Distribution")
+        ax.text(0.02, 0.95, f"std = {std_res:.4f}",
+                transform=ax.transAxes, fontsize=10, va="top")
+        ax.legend()
+
+    elif name == "median_pred_by_alpha_bucket":
+        bins = np.arange(0.0, 1.1, 0.1)
+        idx = np.clip(np.digitize(y_true, bins) - 1, 0, len(bins) - 2)
+        labels = [f"{lo:.1f}–{hi:.1f}" for lo, hi in zip(bins[:-1], bins[1:])]
+        medians, q25, q75 = [], [], []
+        for b in range(len(bins) - 1):
+            mask = idx == b
+            if mask.any():
+                medians.append(float(np.median(y_pred[mask])))
+                q25.append(float(np.quantile(y_pred[mask], 0.25)))
+                q75.append(float(np.quantile(y_pred[mask], 0.75)))
+            else:
+                medians.append(np.nan)
+                q25.append(np.nan)
+                q75.append(np.nan)
+        medians = np.array(medians)
+        yerr = np.array([medians - np.array(q25), np.array(q75) - medians])
+        x = np.arange(len(labels))
+        ax.errorbar(
+            x, medians, yerr=yerr,
+            fmt="o-", capsize=5, markersize=7, linewidth=2, capthick=2,
+            color="steelblue", alpha=0.9,
+        )
+        ax.plot(x, (bins[:-1] + bins[1:]) / 2, "k--", alpha=0.4, label="Perfect prediction")
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.set_xlabel("True ai_energy_ratio bucket")
+        ax.set_ylabel("Median predicted ai_energy_ratio")
+        ax.set_title("Median prediction by ai_energy_ratio bucket\n(error bars: IQR Q25–Q75)")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.3)
+        ax.legend()
+
+    elif name == "abs_error_cdf":
+        abs_err = np.abs(y_pred - y_true)
+        sorted_err = np.sort(abs_err)
+        cdf = np.arange(1, len(sorted_err) + 1) / len(sorted_err)
+        ax.plot(sorted_err, cdf, color="steelblue", linewidth=2)
+        for q in (0.5, 0.9, 0.95):
+            idx = int(np.ceil(q * len(sorted_err))) - 1
+            thresh = float(sorted_err[idx])
+            ax.axhline(q, color="gray", linestyle=":", alpha=0.5)
+            ax.text(thresh, q, f"  p{int(q*100)} = {thresh:.4f}",
+                    va="center", fontsize=9)
+        ax.set_xlabel("|predicted − true|")
+        ax.set_ylabel("Cumulative fraction of files")
+        ax.set_ylim(0.0, 1.02)
+        ax.set_title("CDF of Absolute Error")
+        ax.grid(alpha=0.3)
+
+    if run_name:
+        fig.suptitle(run_name, fontsize=10, y=0.995)
+    fig.tight_layout()
+    path = output_dir / f"{name}.png"
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    logger.info("Saved plot: %s", path)
+    return path

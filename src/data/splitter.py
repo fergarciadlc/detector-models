@@ -22,16 +22,25 @@ class DataSplit:
     test: list[AudioFile]
 
     @property
-    def summary(self) -> dict[str, dict[str, int]]:
-        """Return a summary of split sizes and class distribution."""
+    def summary(self) -> dict[str, dict]:
+        """Return a summary of split sizes and class distribution.
+
+        For binary datasets, each entry includes `real` and `fake` counts.
+        For regression datasets (ai_ratio is set), only `total` is reported
+        since the label is a continuous value, not a class.
+        """
         result = {}
         for split_name in ("train", "val", "test"):
             files = getattr(self, split_name)
-            result[split_name] = {
-                "total": len(files),
-                "real": sum(1 for f in files if f.label == 0),
-                "fake": sum(1 for f in files if f.label == 1),
-            }
+            is_regression = bool(files) and files[0].ai_ratio is not None
+            if is_regression:
+                result[split_name] = {"total": len(files)}
+            else:
+                result[split_name] = {
+                    "total": len(files),
+                    "real": sum(1 for f in files if f.label == 0),
+                    "fake": sum(1 for f in files if f.label == 1),
+                }
         return result
 
 

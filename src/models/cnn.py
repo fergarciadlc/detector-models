@@ -35,9 +35,7 @@ def build_model(model_cfg: ModelConfig, input_shape: tuple[int, int, int]) -> Mo
     Y = X
 
     # Backbone: Conv2D blocks
-    for i, (filters, kernel, stride) in enumerate(
-        zip(bb.filters, bb.kernels, bb.strides)
-    ):
+    for i, (filters, kernel, stride) in enumerate(zip(bb.filters, bb.kernels, bb.strides)):
         if bb.use_maxpool:
             Y = layers.Conv2D(
                 filters,
@@ -87,13 +85,40 @@ def build_model(model_cfg: ModelConfig, input_shape: tuple[int, int, int]) -> Mo
 
     # Output
     if out.type == "binary":
-        Y = layers.Dense(1, activation=out.activation, name="output")(Y)
+        output = layers.Dense(1, activation=out.activation, name="output")(Y)
+        model = Model(X, output, name=model_cfg.name)
+
     elif out.type == "multiclass":
-        Y = layers.Dense(out.num_classes, activation=out.activation, name="output")(Y)
+        output = layers.Dense(out.num_classes, activation=out.activation, name="output")(Y)
+        model = Model(X, output, name=model_cfg.name)
+
+    elif out.type == "regression":
+        output = layers.Dense(
+            1,
+            activation=out.regression["activation"],
+            name="regression_output",
+        )(Y)
+        model = Model(X, output, name=model_cfg.name)
+
+    elif out.type == "multitask":
+        # Regression head: predict alpha between 0 and 1
+        reg_out = layers.Dense(
+            1,
+            activation=out.regression["activation"],
+            name="regression_output",
+        )(Y)
+
+        # Binary head: predict "any AI present?" (alpha > 0)
+        bin_out = layers.Dense(
+            1,
+            activation=out.binary_head["activation"],
+            name="binary_output",
+        )(Y)
+
+        model = Model(X, [reg_out, bin_out], name=model_cfg.name)
+
     else:
         raise ValueError(f"Unknown output type: {out.type}")
-
-    model = Model(X, Y, name=model_cfg.name)
 
     logger.info(
         "Built model '%s': %s params (input: %s)",

@@ -43,7 +43,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Path to Stage 2 feature manifest JSON. "
-            "If omitted, auto-resolved from data/features/{feature_name}/feature_manifest.json"
+            "If omitted, auto-resolved from data/features/{feature_name}/{dataset_name}/feature_manifest.json"
         ),
     )
     parser.add_argument(
@@ -55,9 +55,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _resolve_feature_manifest(features_name: str, features_dir: str = "data/features") -> Path:
-    """Find the feature manifest for a given feature config name."""
-    path = Path(features_dir) / features_name / "feature_manifest.json"
+def _resolve_feature_manifest(
+    features_name: str, dataset_name: str, features_dir: str = "data/features"
+) -> Path:
+    """Find the feature manifest for a given feature config + dataset combination."""
+    path = Path(features_dir) / features_name / dataset_name / "feature_manifest.json"
     if not path.exists():
         raise FileNotFoundError(
             f"Feature manifest not found: {path}. Run Stage 2 (extract_features) first."
@@ -84,7 +86,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.feature_manifest:
         feature_manifest_path = Path(args.feature_manifest)
     else:
-        feature_manifest_path = _resolve_feature_manifest(cfg.features.name)
+        feature_manifest_path = _resolve_feature_manifest(cfg.features.name, cfg.dataset.name)
     logger.info("Feature manifest: %s", feature_manifest_path)
 
     output_dir = Path(args.output_dir)
@@ -100,8 +102,8 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("  Epochs run: %d", result["epochs_run"])
     logger.info("  Final train loss: %.4f", result["final_train_loss"])
     logger.info("  Final val loss:   %.4f", result["final_val_loss"])
-    logger.info("  Final train acc:  %.4f", result["final_train_accuracy"])
-    logger.info("  Final val acc:    %.4f", result["final_val_accuracy"])
+    # logger.info("  Final train acc:  %.4f", result["final_train_accuracy"])
+    # logger.info("  Final val acc:    %.4f", result["final_val_accuracy"])
     logger.info("  Checkpoint: %s", result["checkpoint_path"])
     logger.info("Done.")
 

@@ -1,0 +1,24 @@
+features:
+  name: stft_db_44k_60s
+  type: stft_magnitude_db
+
+  audio:
+    sample_rate: 44100
+    mono: true
+    hf_cut_hz: 16000
+
+  stft:
+    n_fft: 2048
+    win_length: 2048
+    hop_length: 512
+
+  normalization:
+    strategy: fixed
+    mean: -4.0
+    std: 3.0
+
+  # null = full file. Set to a number (seconds)
+  max_duration_sec: 60
+
+  storage: full
+  output_format: npy

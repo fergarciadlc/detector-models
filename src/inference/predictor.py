@@ -56,7 +56,7 @@ def _extract_one(
         os.environ.setdefault(k, "1")
 
     try:
-        y, duration_sec = load_audio(file_path, features_cfg.audio)
+        y, duration_sec, _ = load_audio(file_path, features_cfg.audio)
         spec = compute_spectrogram(y, features_cfg)
         return str(file_path), spec, duration_sec, None
     except Exception as exc:

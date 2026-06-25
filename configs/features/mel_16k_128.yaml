@@ -23,5 +23,8 @@ features:
     mean: -4.0
     std: 3.0
 
+  # null = full file. Set to cap extraction length and reduce .npy file size.
+  max_duration_sec: 30
+
   storage: full
   output_format: npy

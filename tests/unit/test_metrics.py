@@ -5,6 +5,15 @@ import numpy as np
 import pytest
 
 from src.evaluation.metrics import compute_metrics, generate_plots, threshold_sweep
+from src.evaluation.result import EvalResult
+
+
+def _binary_result(y_true, y_pred_prob, y_pred) -> EvalResult:
+    return EvalResult(
+        y_true_binary=y_true,
+        y_pred_binary_prob=y_pred_prob,
+        y_pred_binary=y_pred,
+    )
 
 
 @pytest.fixture
@@ -26,57 +35,42 @@ def mixed_predictions():
 
 
 def test_perfect_accuracy(perfect_predictions):
-    y_true, y_pred_prob, y_pred = perfect_predictions
-    metrics = compute_metrics(
-        y_true, y_pred_prob, y_pred,
-        metric_names=["accuracy", "f1"],
-    )
+    result = _binary_result(*perfect_predictions)
+    metrics = compute_metrics(result, metric_names=["accuracy", "f1"])
     assert metrics["accuracy"] == 1.0
     assert metrics["f1"] == 1.0
 
 
 def test_perfect_auc(perfect_predictions):
-    y_true, y_pred_prob, y_pred = perfect_predictions
-    metrics = compute_metrics(
-        y_true, y_pred_prob, y_pred,
-        metric_names=["auc_roc"],
-    )
+    result = _binary_result(*perfect_predictions)
+    metrics = compute_metrics(result, metric_names=["auc_roc"])
     assert metrics["auc_roc"] == 1.0
 
 
 def test_eer_perfect_predictions(perfect_predictions):
-    y_true, y_pred_prob, y_pred = perfect_predictions
-    metrics = compute_metrics(
-        y_true, y_pred_prob, y_pred,
-        metric_names=["eer"],
-    )
+    result = _binary_result(*perfect_predictions)
+    metrics = compute_metrics(result, metric_names=["eer"])
     assert metrics["eer"] == pytest.approx(0.0, abs=0.01)
 
 
 def test_mixed_predictions_accuracy(mixed_predictions):
-    y_true, y_pred_prob, y_pred = mixed_predictions
-    metrics = compute_metrics(
-        y_true, y_pred_prob, y_pred,
-        metric_names=["accuracy", "f1"],
-    )
+    result = _binary_result(*mixed_predictions)
+    metrics = compute_metrics(result, metric_names=["accuracy", "f1"])
     assert 0.0 < metrics["accuracy"] < 1.0
     assert 0.0 < metrics["f1"] < 1.0
 
 
 def test_unknown_metric_is_skipped(perfect_predictions):
-    y_true, y_pred_prob, y_pred = perfect_predictions
-    metrics = compute_metrics(
-        y_true, y_pred_prob, y_pred,
-        metric_names=["accuracy", "nonexistent_metric"],
-    )
+    result = _binary_result(*perfect_predictions)
+    metrics = compute_metrics(result, metric_names=["accuracy", "nonexistent_metric"])
     assert "accuracy" in metrics
     assert "nonexistent_metric" not in metrics
 
 
 def test_generate_plots_creates_files(mixed_predictions, tmp_path):
-    y_true, y_pred_prob, y_pred = mixed_predictions
+    result = _binary_result(*mixed_predictions)
     paths = generate_plots(
-        y_true, y_pred_prob, y_pred,
+        result,
         plot_names=["confusion_matrix", "roc_curve", "det_curve"],
         output_dir=tmp_path,
     )
@@ -89,9 +83,9 @@ def test_generate_plots_creates_files(mixed_predictions, tmp_path):
 
 
 def test_generate_unknown_plot_is_skipped(mixed_predictions, tmp_path):
-    y_true, y_pred_prob, y_pred = mixed_predictions
+    result = _binary_result(*mixed_predictions)
     paths = generate_plots(
-        y_true, y_pred_prob, y_pred,
+        result,
         plot_names=["unknown_plot"],
         output_dir=tmp_path,
     )

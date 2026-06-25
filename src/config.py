@@ -63,12 +63,14 @@ def _find_project_root(start: Path) -> Path:
 @dataclass
 class SplitConfig:
     strategy: str  # stratified | random | predefined
-    ratios: list[float]
-    seed: int
+    ratios: list[float] = field(default_factory=list)
+    seed: int = 42
     predefined_path: str | None = None
 
     def __post_init__(self):
-        if self.strategy != "predefined" and len(self.ratios) != 3:
+        if self.strategy == "predefined":
+            return  # split is already encoded externally; no ratio validation needed
+        if len(self.ratios) != 3:
             raise ValueError(
                 f"Split ratios must have 3 values [train, val, test], got {self.ratios}"
             )
@@ -80,9 +82,11 @@ class SplitConfig:
 class DatasetConfig:
     name: str
     description: str
-    paths: dict[str, str]  # {real: ..., fake: ...}
     format: str
     split: SplitConfig
+    type: str = "binary"             # "binary" | "regression"
+    path: str | None = None          # single base dir (regression datasets)
+    paths: dict[str, str] | None = None  # {real, fake} dirs (binary datasets)
 
 
 # ── Features ────────────────────────────────────────────────────
@@ -131,6 +135,7 @@ class FeaturesConfig:
     storage: str  # full
     output_format: str  # npy
     mel: MelConfig | None = None
+    max_duration_sec: float | None = None  # None = full file; set to cap extraction length
 
     @property
     def n_freq_bins(self) -> int:
@@ -183,16 +188,30 @@ class HeadConfig:
 
 @dataclass
 class OutputConfig:
-    type: str  # binary | multiclass | regression
-    activation: str
-    loss: str
+    type: str  # binary | multiclass | multitask
+    activation: str = "sigmoid"
+    loss: str = "binary_crossentropy"
     threshold: float | None = None
     num_classes: int | None = None
     class_names: list[str] | None = None
+    # new multitask sub-head configs 
+    regression: dict[str, Any] | None = None
+    binary_head: dict[str, Any] | None = None
 
     def __post_init__(self):
         if self.type == "multiclass" and self.num_classes is None:
             raise ValueError("Output type 'multiclass' requires num_classes")
+        if self.type == "multitask":
+            if self.regression is None or self.binary_head is None:
+                raise ValueError(
+                    "Output type 'multitask' requires both 'regression' "
+                    "and 'binary_head' sub-configs"
+                )
+        if self.type == "regression" and self.regression is None:
+            raise ValueError(
+                "Output type 'regression' requires a 'regression' sub-config "
+                "with 'activation' and 'loss'"
+            )
 
 
 @dataclass
@@ -202,6 +221,8 @@ class ModelConfig:
     backbone: BackboneConfig
     head: HeadConfig
     output: OutputConfig
+    description: str | None = None
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 # ── Training ────────────────────────────────────────────────────
@@ -225,6 +246,9 @@ class TrainingConfig:
     shuffle_buffer_multiplier: int
     callbacks: dict[str, Any] = field(default_factory=dict)
     augmentation: dict[str, Any] = field(default_factory=lambda: {"enabled": False})
+    # new: fine-tuning support
+    pretrained_weights: str | None = None # path to .keras file
+    freeze_backbone_epochs: int = 0 # 0 = no freezing
 
 
 # ── Evaluation ──────────────────────────────────────────────────
@@ -395,14 +419,16 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
         dataset=DatasetConfig(
             name=dataset_raw["name"],
             description=dataset_raw.get("description", ""),
-            paths=dataset_raw["paths"],
             format=dataset_raw["format"],
             split=SplitConfig(
                 strategy=dataset_raw["split"]["strategy"],
-                ratios=dataset_raw["split"]["ratios"],
-                seed=dataset_raw["split"]["seed"],
+                ratios=dataset_raw["split"].get("ratios", []),
+                seed=dataset_raw["split"].get("seed", 42),
                 predefined_path=dataset_raw["split"].get("predefined_path"),
             ),
+            type=dataset_raw.get("type", "binary"),
+            path=dataset_raw.get("path"),
+            paths=dataset_raw.get("paths"),
         ),
         features=FeaturesConfig(
             name=features_raw["name"],
@@ -434,10 +460,13 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
             ),
             storage=features_raw["storage"],
             output_format=features_raw["output_format"],
+            max_duration_sec=features_raw.get("max_duration_sec"),
         ),
         model=ModelConfig(
             name=model_raw["name"],
             type=model_raw["type"],
+            description=model_raw.get("description"),
+            tags=model_raw.get("tags", {}),
             backbone=BackboneConfig(
                 filters=model_raw["backbone"]["filters"],
                 kernels=model_raw["backbone"]["kernels"],
@@ -455,11 +484,13 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
             ),
             output=OutputConfig(
                 type=model_raw["output"]["type"],
-                activation=model_raw["output"]["activation"],
-                loss=model_raw["output"]["loss"],
+                activation=model_raw["output"].get("activation", "sigmoid"),
+                loss=model_raw["output"].get("loss", ""),
                 threshold=model_raw["output"].get("threshold"),
                 num_classes=model_raw["output"].get("num_classes"),
                 class_names=model_raw["output"].get("class_names"),
+                regression=model_raw["output"].get("regression"),
+                binary_head=model_raw["output"].get("binary_head"),
             ),
         ),
         training=TrainingConfig(
@@ -476,6 +507,8 @@ def load_experiment(config_path: str | Path) -> ExperimentConfig:
             shuffle_buffer_multiplier=train["shuffle_buffer_multiplier"],
             callbacks=train.get("callbacks", {}),
             augmentation=train.get("augmentation", {"enabled": False}),
+            pretrained_weights=train.get("pretrained_weights"),
+            freeze_backbone_epochs=train.get("freeze_backbone_epochs", 0),
         ),
         evaluation=EvaluationConfig(
             metrics=eval_["metrics"],

@@ -1,0 +1,35 @@
+model:
+  name: spec_cnn_regression_v3
+  type: spectrogram_cnn
+  description: "Spectrogram CNN — regression output: AI-energy-proportion regression - ReLU output activation, MSE loss"
+  # optional tags:
+  tags:
+    task: multitask
+    architecture: spectrogram_cnn
+    framework: keras
+    dataset: aria
+    features: stft_db_44k
+    model: spec_cnn_regression_v3
+    strategy: from_scratch
+
+  backbone:
+    filters:  [16, 32, 64, 128, 256, 512]
+    kernels:  [3, 3, 3, 3, 3, 3]
+    strides:  [2, 2, 2, 2, 2, 2]
+    use_maxpool: true
+    activation: relu
+    batch_norm: true
+    pooling: average
+    padding: same
+
+  head:
+    dense_units: 128
+    activation: swish
+    dropout: 0.2
+
+  output:
+    type: regression
+    regression:
+      activation: relu
+      loss: mse
+  

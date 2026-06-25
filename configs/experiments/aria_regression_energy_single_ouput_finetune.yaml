@@ -1,0 +1,47 @@
+experiment:
+  name: aria_regression_energy_single_ouput_finetune
+  description: "Regression CNN on ARIA, trained fine-tuning from a model pretrained on FMA medium with Encodec features"
+  mlflow_experiment: aria-regression-baselines
+  tags:
+    task: aria_regression_energy_single_ouput_finetune
+    strategy: fine_tune
+
+dataset: configs/datasets/aria.yaml
+features: configs/features/stft_db_44k.yaml
+model: configs/models/spec_cnn_regression_v1.yaml
+
+training:
+  epochs: 100
+  batch_size: 50
+  learning_rate: 0.0001                # 10x lower than from-scratch
+  optimizer: adam
+  seed: 123
+
+  # ── Fine-tuning ──
+  pretrained_weights: data/artifacts/cnn_mtg_stft_db_44k_fma_medium_encodec/best_model.keras
+  freeze_backbone_epochs: 5
+
+  crop:
+    window_sec: 1.0
+    strategy: random
+    samples_per_file: 5
+
+  shuffle_buffer_multiplier: 2
+
+  callbacks:
+    early_stopping:
+      monitor: val_regression_output_mae
+      patience: 15
+    reduce_lr:
+      monitor: val_regression_output_mae
+      factor: 0.5
+      patience: 5
+
+  augmentation:
+    enabled: false
+
+evaluation:
+  metrics: [mae, rmse, r2, pearson, spearman]
+  plots: [prediction_scatter, error_by_alpha_bucket, residual_histogram, abs_error_cdf, median_pred_by_alpha_bucket]
+  threshold_sweep:
+    enabled: false
