@@ -91,16 +91,30 @@ features: ## Stage 2: Extract features
 		$(if $(MANIFEST),--manifest $(MANIFEST)) \
 		$(if $(WORKERS),--workers $(WORKERS))
 
+FEATURE_MANIFEST ?=
+MAX_DURATION_SEC ?= 60
+STRIP_AI_ENERGY_RATIO ?=
+
+.PHONY: backfill-offsets
+backfill-offsets: ## Backfill start_offset_sec into a pre-existing feature manifest
+	$(DOCKER_RUN) python -m pipelines.backfill_feature_offsets \
+		--feature-manifest $(FEATURE_MANIFEST) \
+		--max-duration-sec $(MAX_DURATION_SEC) \
+		$(if $(WORKERS),--workers $(WORKERS)) \
+		$(if $(STRIP_AI_ENERGY_RATIO),--strip-ai-energy-ratio)
+
 .PHONY: train
-train: ## Stage 3: Train
-	$(DOCKER_RUN) python -m pipelines.train --config $(EXP)
+train: ## Stage 3: Train (override feature manifest with MANIFEST=path/to/feature_manifest.json)
+	$(DOCKER_RUN) python -m pipelines.train --config $(EXP) \
+		$(if $(MANIFEST),--feature-manifest $(MANIFEST))
 
 .PHONY: evaluate
-evaluate: ## Stage 4: Evaluate
-	$(DOCKER_RUN) python -m pipelines.evaluate --config $(EXP)
+evaluate: ## Stage 4: Evaluate (override feature manifest with MANIFEST=...)
+	$(DOCKER_RUN) python -m pipelines.evaluate --config $(EXP) \
+		$(if $(MANIFEST),--feature-manifest $(MANIFEST))
 
 .PHONY: train-eval
-train-eval: train evaluate ## Stage 3+4: Train then evaluate
+train-eval: train evaluate ## Stage 3+4: Train then evaluate (MANIFEST forwarded to both)
 
 .PHONY: run-all
 run-all: prepare features train evaluate ## Full pipeline
