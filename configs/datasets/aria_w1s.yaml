@@ -1,0 +1,21 @@
+dataset:
+  name: aria_w1s
+  type: regression
+  description: >
+    ARIA dataset with per-window labels at 1-second granularity — same
+    mixes as `aria` / `aria_w5s` but canonical_v4.jsonl carries one row per
+    non-overlapping 1s window with its local ai_energy_ratio. During
+    Stage 1 (prepare_data) the loader deduplicates rows back to mixes;
+    during Stage 3/4 the per-window rows are joined with the saved
+    spectrograms and used as training/eval pairs.
+
+  path: /datasets/aria
+  format: mp3
+
+  limit: null
+
+  split:
+    strategy: predefined
+    predefined_path: data/datasets/aria_w1s/canonical_v4.jsonl
+    ratios: [0.8, 0.1, 0.1]
+    seed: 42
