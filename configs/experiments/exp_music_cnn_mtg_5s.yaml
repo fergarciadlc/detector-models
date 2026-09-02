@@ -7,7 +7,7 @@ experiment:
     task: cnn_mtg_stft_db_44k_fma_medium_encodec_5s
 
 dataset: configs/datasets/fma_medium.yaml
-features: configs/features/stft_db_44k_60s.yaml
+features: configs/features/stft_db_44k_8s.yaml
 model: configs/models/spec_cnn_v1.yaml
 
 training:
@@ -18,7 +18,7 @@ training:
   seed: 123
 
   crop:
-    window_sec: 1.0
+    window_sec: 5.0
     strategy: random
     samples_per_file: 1
 
