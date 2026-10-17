@@ -2,8 +2,9 @@
 """
 Spectrogram CNN model builder.
 
-Ports SimpleSpectrogramCNN from the original codebase using the
-Keras functional API, driven entirely by ModelConfig.
+Reimplements the spectrogram CNN architecture described by Afchar et al.
+(2025), "AI-Generated Music Detection and its Challenges", with the Keras
+functional API, driven entirely by ModelConfig.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ def build_model(model_cfg: ModelConfig, input_shape: tuple[int, int, int]) -> Mo
         input_shape: (n_time_frames, n_freq_bins, 1).
 
     Returns:
-        Compiled-ready Keras Model (not yet compiled — caller handles that).
+        Compiled-ready Keras Model (not yet compiled; the caller handles that).
     """
     bb = model_cfg.backbone
     head = model_cfg.head
