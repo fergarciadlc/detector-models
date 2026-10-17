@@ -1,0 +1,27 @@
+features:
+  name: stft_db_44k_8s
+  type: stft_magnitude_db
+
+  audio:
+    sample_rate: 44100
+    mono: true
+    hf_cut_hz: 16000
+
+  stft:
+    n_fft: 2048
+    win_length: 2048
+    hop_length: 512
+
+  normalization:
+    strategy: fixed
+    mean: -4.0
+    std: 3.0
+
+  # Truncated to 8s: large enough for the 5s training crop (427 frames) with
+  # ~3s of random-start slack, small enough to fit ~102G on the SSD so training
+  # is not HDD-I/O-bound. Identical STFT params to stft_db_44k_60s, so these can
+  # be produced by slicing the 60s features (see scripts/slice_features_duration.py).
+  max_duration_sec: 8
+
+  storage: full
+  output_format: npy

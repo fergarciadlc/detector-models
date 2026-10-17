@@ -1,6 +1,5 @@
 # Misc
 **.excalidraw
-predictions/
 
 # Python cache
 __pycache__/
@@ -23,9 +22,8 @@ venv/
 .ipynb_checkpoints/
 
 # Output data
-outputs/
-*.jsonl
-*.csv
+/outputs/
+/predictions/
 
 # Logs
 *.log
@@ -48,12 +46,13 @@ dist/
 # API keys / environment files
 .env.local
 .env.*
+!.env.example
 .envrc
 
 # Pipeline data & artifacts (large / generated)
-data/
-artifacts/
-mlruns/
+/data/
+/artifacts/
+/mlruns/
 
 # Temporary files
 tmp/
@@ -61,7 +60,7 @@ temp/
 
 # Ruff and pytest artifacts
 .cache/
-ruff_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .tox/
