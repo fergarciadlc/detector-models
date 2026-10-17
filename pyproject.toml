@@ -20,28 +20,23 @@ dependencies = [
     # ML / metrics
     "scikit-learn>=1.3",
     "matplotlib>=3.8",
+    "scipy>=1.10",
 
     # Experiment tracking
     "mlflow>=2.11",
 
     # TensorFlow (primary ML framework for MVP)
     "tensorflow==2.15.*",
-    "tensorflow-io==0.36.*",
 ]
 
 [project.optional-dependencies]
-torch = [
-    "torch==2.2.*",
-    "torchaudio==2.2.*",
-    "transformers>=4.38,<5",
-]
 dev = [
     "pytest>=7.4",
     "ruff>=0.3",
     "mypy>=1.8",
 ]
 all = [
-    "detector-models[torch,dev]",
+    "detector-models[dev]",
 ]
 
 [tool.hatch.build.targets.wheel]
