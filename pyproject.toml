@@ -5,8 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "detector-models"
 version = "0.1.0"
-description = "MLOps pipeline for AI-generated audio detection"
+description = "Training and evaluation code for the ISMIR 2026 paper on estimating the proportion of AI-generated stems in hybrid music mixtures"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10,<3.12"
+authors = [
+    {name = "Fernando Garcia"}
+]
 dependencies = [
     # Core
     "numpy>=1.24,<2.0",
@@ -38,6 +43,13 @@ dev = [
 all = [
     "detector-models[dev]",
 ]
+
+[project.urls]
+Paper = "https://arxiv.org/abs/2608.07285"
+Thesis = "https://zenodo.org/records/23186445"
+Website = "https://fergarciadlc.github.io/ismir26-how-much-ai/"
+Repository = "https://github.com/fergarciadlc/detector-models"
+ARIA = "https://github.com/fergarciadlc/aria"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
