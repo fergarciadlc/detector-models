@@ -8,7 +8,7 @@ Loads an experiment YAML, resolves referenced sub-configs
 Usage:
     from src.config import load_experiment
 
-    cfg = load_experiment("configs/experiments/exp_001.yaml")
+    cfg = load_experiment("configs/experiments/regression_sigmoid_mse_windowed_5s.yaml")
     print(cfg.features.stft.n_fft)
     print(cfg.model.backbone.filters)
     print(cfg.training.batch_size)

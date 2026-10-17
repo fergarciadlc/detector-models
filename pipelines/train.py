@@ -6,9 +6,9 @@ Builds model from config, trains on extracted features with random
 cropping, saves best checkpoint, and optionally logs to MLflow.
 
 Usage:
-    python -m pipelines.train --config configs/experiments/exp_001.yaml
-    python -m pipelines.train --config configs/experiments/exp_001.yaml \
-        --feature-manifest data/features/stft_db_44k/feature_manifest.json
+    python -m pipelines.train --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml
+    python -m pipelines.train --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml \
+        --feature-manifest data/features/stft_db_44k_60s/feature_manifest.json
 """
 
 from __future__ import annotations
