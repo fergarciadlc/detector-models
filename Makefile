@@ -91,18 +91,6 @@ features: ## Stage 2: Extract features
 		$(if $(MANIFEST),--manifest $(MANIFEST)) \
 		$(if $(WORKERS),--workers $(WORKERS))
 
-FEATURE_MANIFEST ?=
-MAX_DURATION_SEC ?= 60
-STRIP_AI_ENERGY_RATIO ?=
-
-.PHONY: backfill-offsets
-backfill-offsets: ## Backfill start_offset_sec into a pre-existing feature manifest
-	$(DOCKER_RUN) python -m pipelines.backfill_feature_offsets \
-		--feature-manifest $(FEATURE_MANIFEST) \
-		--max-duration-sec $(MAX_DURATION_SEC) \
-		$(if $(WORKERS),--workers $(WORKERS)) \
-		$(if $(STRIP_AI_ENERGY_RATIO),--strip-ai-energy-ratio)
-
 .PHONY: train
 train: ## Stage 3: Train (override feature manifest with MANIFEST=path/to/feature_manifest.json)
 	$(DOCKER_RUN) python -m pipelines.train --config $(EXP) \

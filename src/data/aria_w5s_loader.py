@@ -145,8 +145,9 @@ def join_windows_to_features(
 
     if skipped_no_offset > 0:
         logger.warning(
-            "%d feature entries missing 'start_offset_sec' — run "
-            "pipelines.backfill_feature_offsets first.",
+            "%d feature entries missing 'start_offset_sec'. The feature "
+            "manifest must be regenerated with pipelines.extract_features, "
+            "which now writes it.",
             skipped_no_offset,
         )
 

@@ -7,7 +7,7 @@ experiment:
     task: ai_music_detection_encodec
 
 dataset: configs/datasets/fma_medium.yaml
-features: configs/features/stft_db_44k.yaml
+features: configs/features/stft_db_44k_full.yaml
 model: configs/models/spec_cnn_v1.yaml
 
 training:
