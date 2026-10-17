@@ -6,7 +6,7 @@ ifeq ($(strip $(USER_NAME)),)
 	USER_NAME := $(shell whoami)
 endif
 
-EXP ?= configs/experiments/exp_001.yaml
+EXP ?= configs/experiments/regression_sigmoid_mse_windowed_5s.yaml
 IMAGE := genai-audio-detector-$(USER_NAME)
 OS := $(shell uname -s)
 BASE_DOCKERFILE ?= $(shell grep -s '^BASE_DOCKERFILE=' .env | cut -d= -f2-)

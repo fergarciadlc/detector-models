@@ -6,8 +6,8 @@ Scans audio directories, validates files, generates stratified
 train/val/test split, and exports a manifest JSON.
 
 Usage:
-    python -m pipelines.prepare_data --config configs/experiments/exp_001.yaml
-    python -m pipelines.prepare_data --config configs/experiments/exp_001.yaml --limit 100
+    python -m pipelines.prepare_data --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml
+    python -m pipelines.prepare_data --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml --limit 100
 """
 
 from __future__ import annotations

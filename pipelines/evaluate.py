@@ -6,9 +6,9 @@ Load best checkpoint, run deterministic strided-window inference on the test
 split, compute metrics, generate plots, and log everything to MLflow.
 
 Usage:
-    python -m pipelines.evaluate --config configs/experiments/exp_001.yaml
-    python -m pipelines.evaluate --config configs/experiments/exp_001.yaml \
-        --model-path data/artifacts/exp_001/best_model.keras
+    python -m pipelines.evaluate --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml
+    python -m pipelines.evaluate --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml \
+        --model-path data/artifacts/regression_sigmoid_mse_w5s/best_model.keras
 """
 
 from __future__ import annotations

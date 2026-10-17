@@ -40,13 +40,13 @@ Usage:
     # Pre-extracted features
     python -m pipelines.predict \\
         --model-path data/artifacts/.../best_model.keras \\
-        --feature-manifest data/features/mel_16k_128/feature_manifest.json \\
+        --feature-manifest data/features/stft_db_44k_60s/aria_w5s/feature_manifest.json \\
         --output-dir data/predictions/my_run
 
     # Explicit --config override (e.g. model lives outside the artifact dir)
     python -m pipelines.predict \\
         --model-path /some/path/model.keras \\
-        --config configs/experiments/exp_001.yaml \\
+        --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml \\
         --input /path/to/audio/folder
 """
 

@@ -7,8 +7,8 @@ spectrogram, and saves one .npy per file.  Produces a feature manifest
 for Stage 3.
 
 Usage:
-    python -m pipelines.extract_features --config configs/experiments/exp_001.yaml
-    python -m pipelines.extract_features --config configs/experiments/exp_001.yaml \
+    python -m pipelines.extract_features --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml
+    python -m pipelines.extract_features --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml \
         --manifest data/manifests/full_songs_v1_limit100_split.json
 """
 
