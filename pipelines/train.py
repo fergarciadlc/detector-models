@@ -8,7 +8,7 @@ cropping, saves best checkpoint, and optionally logs to MLflow.
 Usage:
     python -m pipelines.train --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml
     python -m pipelines.train --config configs/experiments/regression_sigmoid_mse_windowed_5s.yaml \
-        --feature-manifest data/features/stft_db_44k_60s/feature_manifest.json
+        --feature-manifest data/features/stft_db_44k_60s/aria_w5s/feature_manifest.json
 """
 
 from __future__ import annotations
