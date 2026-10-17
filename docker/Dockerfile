@@ -9,7 +9,7 @@ ENV GIT_PYTHON_REFRESH=quiet
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 RUN mkdir -p src && touch src/__init__.py \
     && pip install --no-cache-dir "." \
     && rm -rf src
