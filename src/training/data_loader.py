@@ -417,7 +417,8 @@ def build_windowed_train_val_datasets(
 
     Args:
         feature_manifest_path: Stage 2 feature manifest (must include
-            `start_offset_sec` per entry — backfill if missing).
+            `start_offset_sec` per entry; regenerate it with
+            `pipelines.extract_features` if missing).
         windows_jsonl_path: canonical_v3.jsonl with one row per 5s window.
         dataset_base_path: Dataset base path (used to resolve absolute
             `source_audio` paths back to relative `mix_path` keys).

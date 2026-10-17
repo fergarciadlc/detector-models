@@ -65,7 +65,8 @@ class WindowedRegressionEvaluator:
         if not pairs:
             raise ValueError(
                 "No (feature, window) pairs survived the join — check that "
-                "the feature manifest has been backfilled with start_offset_sec."
+                "the feature manifest includes start_offset_sec. If it does not, "
+                "regenerate it with pipelines.extract_features."
             )
 
         # Group pairs by feature_path so each spectrogram is loaded once.

@@ -27,9 +27,9 @@ def deterministic_window_offset_samples(
 ) -> int:
     """Compute the deterministic random start offset (in samples) for windowing.
 
-    Mirrors the seeding used inside `load_audio` so external tools (e.g. a
-    backfill script for already-extracted features) can reproduce the offset
-    without re-decoding the audio if they already know its sample count.
+    Mirrors the seeding used inside `load_audio` so external tools can
+    reproduce the offset without re-decoding the audio if they already know
+    its sample count.
     """
     if n_samples <= max_samples:
         return 0

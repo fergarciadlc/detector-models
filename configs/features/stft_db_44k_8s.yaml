@@ -19,8 +19,8 @@ features:
 
   # Truncated to 8s: large enough for the 5s training crop (427 frames) with
   # ~3s of random-start slack, small enough to fit ~102G on the SSD so training
-  # is not HDD-I/O-bound. Identical STFT params to stft_db_44k_60s, so these can
-  # be produced by slicing the 60s features (see scripts/slice_features_duration.py).
+  # is not HDD-I/O-bound. Identical STFT params to stft_db_44k_60s. The features
+  # are extracted directly at 8s with extract_features (max_duration_sec below).
   max_duration_sec: 8
 
   storage: full
