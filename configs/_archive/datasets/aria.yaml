@@ -1,0 +1,24 @@
+dataset:
+  name: aria
+  type: regression
+  description: >
+    ARIA dataset — multi-stem music mixes with a known AI stem energy proportion
+    (ai_energy_ratio of the total mix belongs to [0, 1]). Each row is a pre-rendered mix; the split is
+    pre-stratified by num_stems so each partition covers the same label space.
+
+
+  # Single base directory; mix paths inside the JSONL are relative to this.
+  path: /datasets/aria
+  format: mp3
+
+  # null = use all tracks. Set to a small integer (e.g. 10) via --limit in
+  # prepare_data to run a quick smoke test without touching this file.
+  limit: null
+
+  split:
+    strategy: predefined
+    predefined_path: data/datasets/aria/splits/canonical_v2.jsonl
+    # The values below are informational — they describe how the JSONL was
+    # generated and are not used by the pipeline (split is already in the file).
+    ratios: [0.8, 0.1, 0.1]
+    seed: 42
